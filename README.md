@@ -8,7 +8,6 @@ title: 外显子数据生成模拟
     
     癌症的变异类型多样,有的程度轻微,有的程度巨大,而且一个肿瘤组织中混杂着正常和多种变异类型的细胞.因而出现了很多分析癌变细胞比例的软件.但是这些软件分析结果差异很大,与人工分析细胞形态得出的分析结果也相差甚远.因为实验细胞样的真正比例无从事先知道,因而需从设置变异参数出发,确定变异比例,模拟生成外显子测序数据,来检测分析软件的准确性
 
-<<<<<<< HEAD
     这个脚本的过程大致是:根据染色体碱基序列和外显子注释获得外显子序列->由原始的fastq文件获得碱基质量分布->根据外显子序列设置突变情况(各个变异型细胞比例,它们的snp,cnv突变情况)->最后根据突变文件,碱基质量分布,外显子序列生成相应fastq文件.而后用于检测分析软件的准确性
 
 * 程序分为两部分:
@@ -19,12 +18,6 @@ title: 外显子数据生成模拟
     2. fastq生成文件 readout.py:
         
         外显子序列和碱基质量分布
-=======
-文件已准备了2.3.步骤生成的数据,可以跳过2.3.步,直接到第4.步.
-
-如果你要更改设置 setting.py, 2.3.步骤不可缺少
-## 2. 数据初始化
->>>>>>> b4d11df07c2e3febb9d1bdde95e67504ebaeaa20
 
     3. 突变文件目前需要手动设置,没有相关程序
    
@@ -137,57 +130,7 @@ title: 外显子数据生成模拟
         3. import mutation file
         >
     ```
-<<<<<<< HEAD
     目前只完成了第三种,请输入3
-=======
-    手动输入或编写的test.txt的突变参数参考下一步(2. 设置突变参数) 说明
-2. 设置突变参数
-
-    1. 一开始先输入你需要的不同基因型个数
-    2. 然后再按顺序设置基因型的百分比
-    3. 接着设置二倍体的一个基因组突变情况
-    4. 再设置另一个基因组突变情况
-    5. 重复到最后会自动设置最后一个基因型的百分比
-    6. 待设置完两个基因组后会打印设置,若没有问题,回车输出,开始运行
-    7. 如果exon中有N,则会输出这个exon的序列,但不会保存到文件中查看
-
-    下面示范参数的输入
-    ```    
-    E:\mywork\history4>python readout.py
-    initial qphred...
-
-    down...
-    exon count:  75941
-    >1. how much mutation do you want to creat(including normal type):3
-    OK. then enter mutation like 'exon_num snp_num cnv_num dele_num';
-            if exon_num==0 ,this type is normal type;
-            dele_num need be smaller than exon_num;
-            eg. 5 9 6 2 is right ; 3 2 1 4 is wrong ; 0 0 0 0 is normal type
-    >2. please enter your no.1 mutation percent : 40
-    >3. please enter your no.1 mutation homolog-1 : 0 0 0 0
-    >4. please enter your no.1 mutation homolog-2 : 0 0 0 0
-    >5. please enter your no.2 mutation percent : 30
-    >6. please enter your no.2 mutation homolog-1 : 5 9 6 2
-    >7. please enter your no.2 mutation homolog-2 : 7 8 15 0
-    >8. please enter your no.3(last) mutation percent : 30
-    >9. please enter your no.3 mutation homolog-1 : 6 4 5 2
-    >10. please enter your no.3 mutation homolog-2 : 13 0 8 8
-    ```
-> 1. 先设置了组织样中有3个基因型.然后会打印突变参数的示范.
-> 2. 第一个基因型我想设置成正常的基因型,占40%,就输入40回车,然后对两个父母双方的基因突变都设置为0 0 0 0,表示没有任何突变<br>
-> 3. 第二个基因型我想设置突变的基因型,占30%,就输入30回车,如果此时输入80,显然是不合理的,程序会要求重新输入
-> 4. 然后我希望总共有:<br><br>5个外显子发生了突变(如果一个外显子发生了原外显子的拷贝和原外显子突变之后又拷贝,这个算两个外显子,因为是一个外显子的两次突变)<br>9个SNP突变位点(那种突变后又拷贝的只算一次,与拷贝倍数无关)<br>6个拷贝子(只是算多出的拷贝数,snp突变不计入拷贝数,cnv突变产生2个拷贝,只记一个拷贝子,因为只多出1个)<br>2个缺失突变<br><br>就输入5 9 6 2<br>!!!需要注意缺失的突变数目要小于总外显子数,缺失的突变加上拷贝子数要大于外显子数
-
-> 8. 反复操作到最后一个基因型的设置,会自动写剩余的百分比,不用再填写.
-    
-再设置完最后的基因型后回车就会随机分配突变情况(具体是哪个外显子,产生哪些突变),并打印,如下:
-    
-1. normal type 表示该基因组是正常的
-2. mutati type 表示该基因组是发生变异的
-    1. NO.XXXX 是在exonlist的文件中第XXXX个外显子发生突变
-    2. cnv表示该外显子发生多拷贝突变 CNV=X 表示共X+1个该外显子
-    3. origin snp+cnv 表示是原味点突变后又发生多拷贝 SNP=X 表示该外显子又X个点突变,后面的列表[]表示这些突变都分布在这个外显子百分之几的位置 . CNV=Y表示
->>>>>>> b4d11df07c2e3febb9d1bdde95e67504ebaeaa20
 
     XXX是突变设置文件,而后会打印突变,回车确认无误后,输入初始好的json格式碱基质量文件YYY(phred.json)和外显子序列文件ZZZ,如下
     ```
