@@ -1,0 +1,117 @@
+import re
+from exon import Exon
+import collections
+
+def chr_exon_num(file):
+    with open(file,'r') as f:
+        echr=0
+        l=collections.OrderedDict()
+        count=0
+        summ=0
+        for line in f.readlines():
+            m = re.match(r'^(chr[\w\d]*)\s*',line)
+            if m: 
+                if m.group(1)!=echr: 
+                    if echr!=0:
+                        l[echr]=count
+                        summ+=count
+                    echr=m.group(1)
+                    count=1
+                else:
+                    count+=1
+        l[echr]=count
+        summ+=count
+    l['total']=summ
+    return l
+def show_chr_exon_num(exon_nums):
+    for x,key in list(enumerate(exon_nums.keys())):
+        if (x-1)%5==0:
+            print('')
+        print('%s=%d'%(key,exon_nums[key]),end='\t')
+    print('')
+
+def chr_pos(file):
+    echr=0
+    chr_poss={}
+    with open(file,'r')as f:
+        line =f.readline()
+        while(line):
+            m = re.match(r'^chr([\w\d]*)',line)
+            if m:
+                if m.group(1)!=echr:
+                    chr_poss[m.group(1)]=f.tell()-len(line)-1
+                    echr=m.group(1)
+            line=f.readline()
+    return chr_poss
+       
+def show_exon(f,info,pos):
+    f.seek(pos,0)
+    line=f.readline()
+    while(line):
+        m=re.match(r'^chr([\w\d]*)\t+(\d*)\t+(\d*)\t+(%s)'%info[1],line)
+        info=line.strip()
+        if m:
+            seq=''
+            line=f.readline()
+            n = re.match(r'^chr',line)
+            while(not n):
+                seq=seq+line.strip()
+                line=f.readline()
+                if not line:
+                    break
+                n = re.match(r'^chr',line)
+            exon=Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(info[-1]))
+            break  
+        line=f.readline()
+    if len(info)==2:
+        exon.show(1,-1)
+    elif len(info)==3:
+        exon.show(int(info[2]),-1)
+    elif len(info)==4:
+        exon.show(int(info[2]),int(info[3]))
+    elif len(info)==5:
+        if info[4].upper()=="T":
+            info[4]=True
+        else:
+            info[4]=False
+        exon.show(int(info[2]),int(info[3]),info[4])
+def view(file):
+    helps='''
+    chr -n                  : show chromosome exon number
+    chrx -n                 : shoe chx exon number
+    chrx -pos -pos1 -pos2   : show chx from pos1 to pos2 sequence,pos is absolute
+    chrx -num               : show chx no.num exon sequence
+    chrx -num -pos1 -pos2   : show chx no.num from pos1 to pos2 sequence,pos is relative
+    chrx -num -pis1 -pot2 -t    : show chx no.num exon sequence,mark pos1 and pos2
+    '''
+    print(helps)
+    exon_nums=chr_exon_num(file)
+    chr_poss=chr_pos(file)
+    with open(file,'r') as f:
+        line =input('>>')
+        while(line.strip()!='exit'):
+            if line.strip()=='help':
+                print(helps)
+            elif line=='chr -n':
+                show_chr_exon_num(exon_nums)
+            elif  re.match(r'(chr[\d\w]+)\s*-n',line):
+                m=re.match(r'(chr[\d\w]+)\s*-n',line)
+                print(m.group(1),'=',exon_nums[m.group(1)])
+            elif re.match(r'ch([\d\w]+)\s*-pos\s-(\d+)\s-(\d+)',line):
+                pass
+            elif re.match(r'chr([\d\w]+)\s-(\d+)',line):
+                m=re.match(r'chr([\d\w]+)\s*-(\d*)',line)
+                info=line.split(' -')
+                info[0]=m.group(1)
+                info[1]='CH'+(m.group(1))+'-'+info[1]
+                try:
+                    show_exon(f,info,chr_poss[m.group(1)])
+                except:
+                    pass
+            line=input('>>')
+
+
+if __name__ == '__main__':
+    file=input("please enter exonlist file you want to look for : ")
+    view(file)
+    
