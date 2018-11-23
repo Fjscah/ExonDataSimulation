@@ -133,9 +133,7 @@ class Exon(object):
             for x in mutation:
                 yield self.__get_one_seq(x,chip_len)
 
-
-
-            
+   
 
 class WholeExon(object):
     # coulum is the numbeer of dNTP in a row from filein, step is usually one byte which stand for '\n'
@@ -211,3 +209,16 @@ class WholeExon(object):
                 exon =0
             else:
                 pass
+
+
+def get_seq(filed):
+    seq=''
+    line=filed.readline()
+    n = re.match(r'^chr',line)
+    while(not n):
+        seq=seq+line.strip()
+        line=filed.readline()
+        if not line:
+            return seq
+        n = re.match(r'^chr',line)
+    return seq  

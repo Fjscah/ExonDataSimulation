@@ -1,10 +1,9 @@
-3
-20
-0 0 0 0
-0 0 0 0
-50
-5 9 6 2
-8 8 0 8
-10 8 6 6
-5 0 8 1
+init -seq -NCBI_gh38.fna -NCBI_hg38ref.fna -NCBI
+init -ano -NCBI_hg38.gff -NCBI_hg38exon.gff -NCBI
+init -list -NCBI_hg38ref.fna -NCBI_hg38exon.gff -NCBI_hg38list.txt -NCBI
+init -list -NCBI_hg38ref.fna -COM_hg38.bed -COM_hg38list.txt -COM
+phred -source100.fastq -33
+mutations_setting.txt
+phred.json
+COM_hg38list.txt
 

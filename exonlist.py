@@ -9,7 +9,7 @@ from exon import Exon, WholeExon
 from filefunc import *
 from setting import *
 
-print("default:","INSERT length=",INSERT,"CHIP length=",CHIP_LEN)
+print("default:","INSERT maxlength=",MAXINSERT,"CHIP length=",CHIP_LEN)
 def chr2num(chrr):
     if chrr in ('X','x'):
         return '23'
@@ -153,7 +153,7 @@ if __name__ == '__main__':
     init -ano -filey -file2 -ver    : get exon annotation from filey, generate file2
     init -list -file1 -file2 -file3 -ver :get exonlist from file1,file2, generate file3
     init -all                       :excute above all according setting,py
-    phred -file -XX                 : get qphred frequencies from file,generate 'phred.json'
+    phred -filez -file4 -XX         : get qphred frequencies from file,generate 'phred.json'
     view -file3                     : view exonlist's exon sequence
     '''
     print(help)
@@ -181,8 +181,8 @@ if __name__ == '__main__':
         elif re.match(r'phred',opera):
             info=opera.split(' -')
             if len(info)>=3:
-                file,plus=info[1:]
-                get_phred_fre(file,'phred.json',PHRED)
+                filex,file4,plus=info[1:]
+                get_phred_fre(filex,file4,PHRED)
         elif re.match(r'view',opera):
             info=opera.split(' -')
             if len(info)>=2:

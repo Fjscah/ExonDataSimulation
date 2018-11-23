@@ -60,6 +60,11 @@ def get_content(file1,w1,text1,text2):
                     elif re.match(text2, line) and (not re.match(text1, line)):
                         state=False
 def get_row_column(file,text,aim=0,match='=='):
+    '''
+    caculate column of aimed row ,text is search content,
+    aim=0 get current row ,aim=1 get next row
+    match='==' is complete match, match='re' only match head ingore tail
+    '''
     with open(file,'r') as f:
         if aim==0:
             f.seek(get_line_head(f,text,match),0)
@@ -70,5 +75,11 @@ def get_row_column(file,text,aim=0,match='=='):
             line=f.readline()
             return len(line.strip())
 def write_column(writed,text,column):
+    ''' write text to a opend file with coulum words every row'''
     for x in range(0,len(text),column):
         writed.write(text[x:x+column]+'\n')
+def num_positive(num):
+    if num<0:
+        return 0
+    else:
+        return num

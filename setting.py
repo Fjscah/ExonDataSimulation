@@ -1,16 +1,10 @@
-
-READ =100
-
+'''readout.py setting'''
 ACCURACY_RATE= 0.8
 DEEPTH=100
 CHIP_LEN=10
 SUBSTITUTION={'A':('G','C','T','G'),'G':('A','C','T','A'),'C':('T','A','G','T'),'T':('C','G','A','C')} 
-
-ROW_STEP=2
-
-PHRED=33
 INSERT=200
-'''exonlist_insert.py setting'''
+'''exonlist.py setting'''
 MAXINSERT=200
 JOIN_GAP=200
 UCSC={
@@ -39,3 +33,7 @@ DEFAULTS={
     'file3':"NCBI_hg38list.txt",
     'fileq':'qphred.fasq',
     'ver':NCBI}
+
+'''others'''
+ROW_STEP=2
+PHRED=33

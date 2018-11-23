@@ -7,8 +7,8 @@ import time
 from random import choice
 
 import mutation
-from exon import Exon
-from setting import (ACCURACY_RATE, CHIP_LEN, DEEPTH, INSERT, READ, ROW_STEP,
+from exon import Exon,get_seq
+from setting import (ACCURACY_RATE, CHIP_LEN, DEEPTH, INSERT, ROW_STEP,
                      SUBSTITUTION,PHRED)
 from view import chr_exon_num, show_chr_exon_num
 
@@ -31,7 +31,7 @@ def random_weight_choice(lists):
 
 def random_qphred(rang,frequencies,plus=33):
     s=''
-    for x in range(1,len(rang)+1):
+    for x in range(1,len(frequencies)+1):
         weights=frequencies['pos%d_frequencies'%x]
         num=random.choices(rang,weights=weights)
         char=chr(num[0]+plus)
@@ -55,7 +55,7 @@ def complementation(read):
     for char in read:
         l.append(COMPLEMENT[char.upper()])
     return l
-def PEread(seq,length,frequencies):
+def PEread(seq,length,frequencies,readlen):
     ''' get one inser's 2 reads'''
     p1=INSERT+length-CHIP_LEN-1
     cbp=random.randint(INSERT, p1)
@@ -68,8 +68,8 @@ def PEread(seq,length,frequencies):
             l.append(char.upper())
         else :
             l.append(choice(ATCG))
-    read1=l[0:READ]#list
-    read2=complementation(l[-1:-1-READ:-1])#list
+    read1=l[0:readlen]#list
+    read2=complementation(l[-1:-1-readlen:-1])#list
     phred1=list(choice(frequencies))
     phred2=list(choice(frequencies))
     add_read_err(read1,phred1)
@@ -83,20 +83,12 @@ def get_exon(file):
         m = re.match(r'^chr([\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)\t\d*\t(\d*)',line)
         if m:
             # if m is exon title ,then store this exon's sequence
-            seq=''
-            line=file.readline()
-            n = re.match(r'^chr([\w\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)',line)
-            while(not n):
-                seq=seq+line.strip()
-                line=file.readline()
-                if not line:
-                    break
-                n = re.match(r'^chr([\w\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)',line)
+            seq=get_seq(file)
             yield Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(m.group(5)))
         else:
             line=file.readline()
 
-def fastq_exon(w1,w2,exon,frequencies,mutation_types):
+def fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen):
     ''' one exon's all fastq reault be writed to w'''
     print('writing chr %s - exon : %s  - %s' %(exon.chr,exon.exon_id,exon.begin) ,end='\r')
     if 'N' in exon.seq:
@@ -107,7 +99,7 @@ def fastq_exon(w1,w2,exon,frequencies,mutation_types):
         copy_num=mutation_types[x].haplots[0].get_normal_num(exon_id)+mutation_types[x].haplots[1].get_normal_num(exon_id)
         turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT/100)
         for y in range (turns):
-            read1,read2,phred1,phred2=PEread(seq,length,frequencies)
+            read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen)
             w1.write('@%s:%s:%d/1\n'% (exon_id,x,y))
             w1.write(read1+'\n')
             w1.write('+\n')
@@ -123,7 +115,7 @@ def fastq_exon(w1,w2,exon,frequencies,mutation_types):
                     turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT/100)
                     seq=list(seq)
                     for y in range(turns):
-                        read1,read2,phred1,phred2=PEread(seq,length,frequencies)
+                        read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen)
                         w1.write('@%s:%s:%d:%d:%s/1\n'% (exon_id,x,z,y,onemutation))
                         w1.write(read1+'\n')
                         w1.write('+\n')
@@ -165,6 +157,7 @@ if __name__ == '__main__':
         phred_reads.append(random_qphred(rang,frequencies,PHRED))
     frequencies=phred_reads
     phred_reads=None
+    readlen=len(frequencies)
 
 
 
@@ -193,7 +186,7 @@ if __name__ == '__main__':
             # one exon generate to mutation_types
             with open(filein,'r')as r:
                 for exon in get_exon(r):
-                    fastq_exon(w1,w2,exon,frequencies,mutation_types)
+                    fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen)
     print('\n***down***')
     time_end=time.time()
     t=time_end-time_start
