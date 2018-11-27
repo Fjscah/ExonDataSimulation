@@ -48,10 +48,13 @@ class Exon(object):
         return self.__exon_id
     @property
     def length(self):
-        return self.__end-self.__begin
+        return self.__end-self.__begin+1
     @property
     def insert(self):
         return self.__insert
+    def set_insert(self,insert):
+        self.__insert=insert
+
     def getexon_info(self):
         '''return chr,begin,end,exon_id,length,insert;split is tab'''
         info="chr%s\t%d\t%d\t%s\t%d\t%d" %(
@@ -61,6 +64,7 @@ class Exon(object):
     def add_mutation(self,mutation):
         '''
         'mutation like:
+        {'cn'='.','pos':52,ref='ATGG',alt='T'}
         {'cn'=3,'pos':52,ref='ATGG',alt='T'}
         or the list of such dic
         [{'cn'=3,'pos':52,ref='ATGG',alt='T'}]
@@ -69,8 +73,8 @@ class Exon(object):
             mutation=[mutation]
         if isinstance(mutation, list):
             for x in mutation:
-                if x not in self.mutations:
-                    if x['pos']=='.':
+                if x not in self.mutations and x['cn']!='.':
+                    if x['start'][0]=='.':
                         if self.get_normal_num()==1:
                             self.mutations.append(x)
                         else:
@@ -89,37 +93,49 @@ class Exon(object):
 
     def get_normal_num(self):
         for x in self.mutations:
-            if x['pos']=='.':
+            if x['start'][0]=='.':
                 return int(x['cn'])
         return 1
+    
     def show_mutations(self):
-        print('pos\tref\talt\t cn\tdescription')
+        print('start\tend\tref\talt\t cn\tdescription')
         for x in self.mutations:
             for y in x.values():
-                print(y,end='\t')
+                if isinstance(y,(tuple,list)):
+                    print(','.join(y),end='\t')
+                else:
+                    print(y,end='\t')
             print('')
+    
     @property
-    def snp_mutations(self):
+    def abnormal_mutations(self):
         '''return mutations which sequence has change'''
-        snp_mutations=[]
+        abnormal_mutations=[]
         for x in self.mutations:
-            if x['pos']!='.':
-                snp_mutations.append(x)
-        return snp_mutations
+            if x['start'][0]!='.':
+                abnormal_mutations.append(x)
+        return abnormal_mutations
+    
     def __get_one_seq(self,onemutation,chip_len):
         '''according one mutaton(dict) ,return new seq,length,copynum'''
-        if onemutation['pos']=='.':
+        if onemutation['start'][0]=='.':
             return self.seq,self.length,1,'NORMAL'
         else:
-            pos=int(onemutation['pos'])
-            length=0
-            mid=''
-            if (onemutation['ref'])!='.':
-                length=len(onemutation)
-            if (onemutation['alt'])!='.':
-                mid=onemutation['alt']
-            newseq=self.seq[:self.insert+pos]+mid+self.seq[self.insert+pos+length-1:]
-            seqlength=self.length+len(mid)-length
+            cur=0
+            newseq=''
+            for w,x,y,z in zip(onemutation['start'],onemutation['end'],onemutation['ref'],onemutation['alt']):
+                try:
+                    w=int(w)
+                    x=int(x)
+                except:
+                    print(onemutation)
+                y=len(y)
+                if z=='.':
+                    z=''
+                newseq+=self.seq[cur:self.insert+w-1]+z
+                cur=self.insert+x
+            newseq+=self.seq[cur:]
+            seqlength=len(newseq)-2*self.insert
             if seqlength > chip_len:
                 return newseq,seqlength,int(onemutation['cn']),tuple(onemutation.values())
             else:
@@ -135,80 +151,6 @@ class Exon(object):
 
    
 
-class WholeExon(object):
-    # coulum is the numbeer of dNTP in a row from filein, step is usually one byte which stand for '\n'
-    def __init__(self,fin,fout,column,step=2):
-        self.filein=fin
-        self.fileout=fout
-        self.pos=0
-        self.chr=0
-        self.column=column
-        self.step=step
-    # write sequence of certain exon according to it's begin pos and it's length
-    def exonseq(self,pos,length,new_column):
-        self.filein.seek(pos,0)
-        seq=""
-        sys.stdout.write(str(self.filein.tell()))
-        sys.stdout.write('-->')
-        line=self.filein.readline().strip()
-        # sp is set for alignment, in other word, write the same number of dNTP in every row
-        while(length>0):
-            length=length-len(line)
-            if length>=0:
-                seq+=line
-            else:
-                seq+=line[:length]
-            line=self.filein.readline().strip()
-        write_column(self.fileout,seq,new_column)
-        sys.stdout.write(str(self.filein.tell())+"     ")
-        sys.stdout.write('\r')
-    def lentopos(self,length):
-        raw=length//self.column
-        return raw*(self.column+self.step)+length %self.column-1
-    # according exons informatin write its sequence ; the exon must be in order from 1 to 24
-    def wholeexonseq(self,exons,new_column):
-        new_column=self.column
-        exon=next(exons)
-        while(exon):
-            tempchr=exon.chr
-            if not tempchr==self.chr:
-                print("exon end:",self.filein.tell(),"     ")
-                self.chr=tempchr
-                line=self.filein.readline()
-                row=0
-                while(line):
-                    row+=1
-                    sys.stdout.write("%d"%row)
-                    sys.stdout.write('\r')
-                    if re.match(r'>',line):
-                        print("chr",self.chr,"pos",self.filein.tell(),line.strip())
-                        # change to next chromosome 
-                        self.pos=self.filein.tell()
-                        row=0
-                        break
-                    try:
-                        line = self.filein.readline()
-                    except StopIteration:
-                        line =0
-                    else:
-                        pass
-
-            # write exon title
-            #print('write exon ',exon.getexon_info())
-            self.fileout.write("%s\n" % (exon.getexon_info()))
-            po = self.pos+ self.lentopos(exon.begin-exon.insert)
-            length=exon.length+2*exon.insert
-            # write exon sequence
-            self.filein.seek(self.pos,0)
-            line = self.filein.readline()
-
-            self.exonseq(po,length,new_column)
-            try:
-                exon=next(exons)
-            except StopIteration:
-                exon =0
-            else:
-                pass
 
 
 def get_seq(filed):
@@ -221,4 +163,4 @@ def get_seq(filed):
         if not line:
             return seq
         n = re.match(r'^chr',line)
-    return seq  
+    return seq,line

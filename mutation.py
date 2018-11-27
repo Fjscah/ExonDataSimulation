@@ -1,6 +1,7 @@
 import random
 import re
 from exon import Exon
+import copy
 
 def positive_value(value):
     if value<0:
@@ -62,6 +63,15 @@ class GenomeType():
         for x in range(len(self.haplots)):
             print('haplot%d : '% (x+1),end='')
             self.haplots[x].show_mutations()
+    def add_mutation(self,muta):
+        muta1=copy.deepcopy(muta)
+        muta1['cn']=muta['cn'][0]
+        if muta1['cn']!='.':
+            self.haplots[0].add_mutation(muta1)
+        muta2=copy.deepcopy(muta)
+        muta2['cn']=muta['cn'][1]
+        if muta2['cn']!='.':
+            self.haplots[1].add_mutation(muta2)
 
 
 
@@ -77,7 +87,8 @@ def set_mutation():
     elif choice=='2':
         mutation_types=manual_mutation()
     elif choice=='3':
-        mutation_types=file_mutation()
+        mname=input('please input mutation setting file : ')
+        mutation_types=file_mutation(mname)
     elif choice=='exit':
         return 'exit'
     else:
@@ -111,11 +122,10 @@ def searchline(f,text):
             return 
         line=f.readline()
 
-def file_mutation():
-    filename=input('please input mutation setting file : ')
+def file_mutation(mname):
     mutation_types={}
-    keys=['chr','exon','pos','ref','alt','cn','description']
-    with open(filename,'r') as f:
+    keys=['chr','exon','start','end','ref','alt','cn','description']
+    with open(mname,'r') as f:
         searchline(f,r'>genometype:')
         line=f.readline()
         percent=float(100)
@@ -127,29 +137,24 @@ def file_mutation():
             mutation_types[mutas[0]]=GenomeType(float(mutas[1]),HaploType(),HaploType())
             percent-=float(mutas[1])
         for key in mutation_types:
-            searchline(f,r'>mutation:%s-1'%key)
+            searchline(f,r'>mutation:%s'%key)
             line=f.readline()
             while(line):
                 line=f.readline()
                 if re.match(r'>',line) :
                     break
                 muta=line.strip().split()
-                muta=dict(zip(keys,muta))
-                mutation_types[key].haplots[0].add_mutation(muta)
-            searchline(f,r'>mutation:%s-2'%key)
-            line=f.readline()
-            while(line):
-                line=f.readline()
-                if re.match(r'>',line) :
-                    break
-                muta=line.strip().split()
-                if len(muta)==7:
-                    muta[5]=int(muta[5])
-                if muta:
+                if len(muta)>=7:
                     muta=dict(zip(keys,muta))
-                    mutation_types[key].haplots[1].add_mutation(muta)
+                    muta['start']=muta['start'].split(',')
+                    muta['end']=muta['end'].split(',')
+                    muta['ref']=muta['ref'].split(',')
+                    muta['alt']=muta['alt'].split(',')
+                    muta['cn']=muta['cn'].split('/')
+                    mutation_types[key].add_mutation(muta)
     return mutation_types
 
 
-
+if __name__ == '__main__':
+    set_mutation()
         

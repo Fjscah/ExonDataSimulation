@@ -1,8 +1,11 @@
-import re
-from exon import Exon,get_seq,num_positive
 import collections
-from filefunc import get_line_head
-def chr_exon_num(file):
+import re
+
+from exon import Exon, get_seq, num_positive
+from filefunc import get_line_text, get_pos_text
+
+
+def get_chr_exon_num(file):
     with open(file,'r') as f:
         echr=0
         l=collections.OrderedDict()
@@ -45,16 +48,12 @@ def chr_pos(file):
     return chr_poss
 
 def show_exon(filed,info,pos):
-    filed.seek(pos,0)
-    line=filed.readline()
-    while(line):
-        m=re.match(r'^chr([\w\d]*)\t+(\d*)\t+(\d*)\t+(%s)'%info[1],line)
-        info=line.strip()
-        if m:
-            seq=get_seq(filed)
-            exon=Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(info[-1]))
-            break  
-        line=filed.readline()
+    line=get_line_text(filed,r'^chr([\w\d]+)\t+(\d+)\t+(\d+)\t+(%s).*'%info[1],0,'re',pos=pos)
+    m=re.match(r'^chr([\w\d]*)\t+(\d*)\t+(\d*)\t+(%s)'%info[1],line)
+    exoninfo=line.split()
+    if m:
+        seq,line=get_seq(filed)
+        exon=Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(exoninfo[-1]))
     if len(info)==2:
         exon.show(1,-1)
     elif len(info)==3:
@@ -69,31 +68,38 @@ def show_exon(filed,info,pos):
         exon.show(int(info[2]),int(info[3]),info[4])
 def show_pos(f,info,pos):
     exons=[]
+    f.seek(pos,0)
     line=f.readline()
     pos1=int(info[2])
     pos2=int(info[3])
     while(line):
         m=re.match(r'^chr([\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)\t\d*\t(\d*)',line)
         if m:
+            exoninfo=line.split()
             begin=int(m.group(2))
             end=int(m.group(3))
             if begin<=pos2 and end>=pos1:
-                seq=get_seq(f)
-                exons.append(Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(info[-1])))
+                seq,line=get_seq(f)
+                exons.append(Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(exoninfo[-1])))
             elif begin>pos2:
                 break
-    rpos1=num_positive(pos1-exons[0].begin+1)
-    rpos2=exons[-1].length-num_positive(exons[-1].end-pos2)
-    if len(exons)==1:
-        exons[0].show(rpos1,rpos2)
-    elif len(exons)>1:
-        for x in exons:
-            if x==exons[0]:
-                x.show(rpos1,-1)
-            elif x==exons[-1]:
-                x.show(1,rpos2)
             else:
-                x.show()
+                line=f.readline()
+        else:
+            line=f.readline()
+    if exons:
+        rpos1=num_positive(pos1-exons[0].begin)
+        rpos2=exons[-1].length-num_positive(exons[-1].end-pos2)
+        if len(exons)==1:
+            exons[0].show(rpos1+1,rpos2)
+        elif len(exons)>1:
+            for x in exons:
+                if x==exons[0]:
+                    x.show(rpos1,-1)
+                elif x==exons[-1]:
+                    x.show(1,rpos2)
+                else:
+                    x.show()
 
 def view(file):
     helps='''
@@ -105,7 +111,7 @@ def view(file):
     chrx -num -pis1 -pot2 -t: show chx no.num exon sequence,mark pos1 and pos2
     '''
     print(helps)
-    exon_nums=chr_exon_num(file)
+    exon_nums=get_chr_exon_num(file)
     chr_poss=chr_pos(file)
     with open(file,'r') as f:
         line =input('>>')
@@ -114,11 +120,11 @@ def view(file):
                 print(helps)
             elif line=='chr -n':
                 show_chr_exon_num(exon_nums)
-            elif  re.match(r'(chr[\d\w]+)\s*-n',line):
+            elif re.match(r'(chr[\d\w]+)\s*-n',line):
                 m=re.match(r'(chr[\d\w]+)\s*-n',line)
                 print(m.group(1),'=',exon_nums[m.group(1)])
-            elif re.match(r'ch([\d\w]+)\s*-pos\s-(\d+)\s-(\d+)',line):
-                m=re.match(r'ch([\d\w]+)\s*-pos\s-(\d+)\s-(\d+)',line)
+            elif re.match(r'chr([\d\w]+)\s*-pos\s-(\d+)\s-(\d+)',line):
+                m=re.match(r'chr([\d\w]+)\s*-pos\s-(\d+)\s-(\d+)',line)
                 info=line.split(' -')
                 show_pos(f,info,chr_poss[m.group(1)])
             elif re.match(r'chr([\d\w]+)\s-(\d+)',line):
@@ -126,14 +132,12 @@ def view(file):
                 info=line.split(' -')
                 info[0]=m.group(1)
                 info[1]='CH'+(m.group(1))+'-'+info[1]
-                try:
-                    show_exon(f,info,chr_poss[m.group(1)])
-                except:
-                    pass
+                show_exon(f,info,chr_poss[m.group(1)])
+
+
             line=input('>>')
 
 
 if __name__ == '__main__':
     file=input("please enter exonlist file you want to look for : ")
     view(file)
-    

@@ -4,12 +4,12 @@ import re
 import sys
 import time
 
-import view
-from exon import Exon, WholeExon
-from filefunc import *
+
+from exon import Exon,get_seq
+from filefunc import write_content,write_column,get_column_row
 from setting import *
 
-print("default:","INSERT maxlength=",MAXINSERT,"CHIP length=",CHIP_LEN)
+
 def chr2num(chrr):
     if chrr in ('X','x'):
         return '23'
@@ -18,9 +18,6 @@ def chr2num(chrr):
     elif chrr in ('12920','M','m'):
         return '25'
     return chrr
-def char2phred(char,plus=33):
-    code=ord(char)-plus
-    return code
 def get_exoninfo(line,word,chip_len):
     '''according ever row to genarater Exon object'''
     m = re.match(word,line)
@@ -89,103 +86,128 @@ def exons_generater(f,word,join_gap,chip_len,maxinsert):
                 end=lorder[y][1]
                 x,y=y,y+1
         yield Exon(echr,lorder[x][0],lorder[-1][1],'CH'+str(echr)+'-'+str(eid),insert=maxinsert)
-            
+class WholeExon(object):
+    # coulum is the numbeer of dNTP in a row from filein, step is usually one byte which stand for '\n'
+    def __init__(self,fin,fout,column,step=2):
+        self.filein=fin
+        self.fileout=fout
+        self.pos=0
+        self.chr=0
+        self.column=column
+        self.step=step
+    # write sequence of certain exon according to it's begin pos and it's length
+    def exonseq(self,exon,pos,length,new_column):
+        self.filein.seek(pos,0)
+        seq=""
+        sys.stdout.write(str(self.filein.tell()))
+        sys.stdout.write('-->')
+        line=self.filein.readline().strip()
+        # sp is set for alignment, in other word, write the same number of dNTP in every row
+        while(length>0):
+            length=length-len(line)
+            if length>=0:
+                seq+=line
+            else:
+                seq+=line[:length]
+            line=self.filein.readline().strip()
+        if 'N' in seq:
+            l=seq[0:exon.insert].rfind('N')
+            r=seq[-1:-1-exon.insert:-1].rfind('N')
+            s=max(l,r)+1#s>=1
+            if s:
+                seq=seq[s:-s]
+                exon.set_insert(exon.insert-s)
+                print(exon.getexon_info(),'\n',seq)
+        self.fileout.write("%s\n" % (exon.getexon_info()))
+        write_column(self.fileout,seq,new_column)
+        sys.stdout.write(str(self.filein.tell())+"     ")
+        sys.stdout.write('\r')
+    def lentopos(self,length):
+        raw=length//self.column
+        return raw*(self.column+self.step)+length %self.column-1
+    # according exons informatin write its sequence ; the exon must be in order from 1 to 24
+    def wholeexonseq(self,exons,new_column):
+        new_column=self.column
+        exon=next(exons)
+        while(exon):
+            tempchr=exon.chr
+            if not tempchr==self.chr:
+                print("exon end:",self.filein.tell(),"     ")
+                self.chr=tempchr
+                line=self.filein.readline()
+                row=0
+                while(line):
+                    row+=1
+                    sys.stdout.write("%d"%row)
+                    sys.stdout.write('\r')
+                    if re.match(r'>',line):
+                        print("chr",self.chr,"pos",self.filein.tell(),line.strip())
+                        # change to next chromosome 
+                        self.pos=self.filein.tell()
+                        row=0
+                        break
+                    try:
+                        line = self.filein.readline()
+                    except StopIteration:
+                        line =0
+                    else:
+                        pass
+
+            # write exon title
+            #print('write exon ',exon.getexon_info())
+            po = self.pos+ self.lentopos(exon.begin-exon.insert)
+            length=exon.length+2*exon.insert
+            # write exon sequence
+            self.filein.seek(self.pos,0)
+            line = self.filein.readline()
+
+            self.exonseq(exon,po,length,new_column)
+            try:
+                exon=next(exons)
+            except StopIteration:
+                exon =0
+            else:
+                pass            
 
 def get_chr_seq(file,write,ver):
     word=eval(ver+"['seq']")
+    if isinstance(word,str):
+        match='re'
+    elif isinstance(word,list,tuple):
+        match='=='
     # get chromosome sequence from grch38 genomic
     print("get chromosome sequence from %s..."%file)
-    get_content(file,write,word,r'>.*')
+    write_content(file,write,word,r'>.*',0,0,match,'re')
     print('\ndown. outfile: %s'%write)
 def get_exon_ano(file,write,ver):
     word=eval(ver+"['ano']")
     # get exons annotation from v29 annotation
     print("get exons annotation from %s..."%file)
-    get_content(file,write,word,r'.*')
+    write_content(file,write,word,r'.*',0,0,'re','re')
     print('\ndown. outfile: %s'%write)
-def get_exon_list(file1,file2,write):
+def get_exon_list(file1,file2,write,ver,chip_len,join_gap,row_step,maxinsert):
     word=eval(ver+"['list']")
     # get exon sequence ; write to exonlist.txt
     print("get exon initial list from %s , %s..."%(file1,file2))
-    file1_column=get_row_column(file1,'>',1,'re')
-    with open(file3,'w') as w:
+    file1_column=get_column_row(file1,'>',1,'re')
+    with open(write,'w') as w:
         w.write("#chr\tbegin\tend\tgeneid\tlength\tINSERT\n")
         with open (file1,'r') as r1:
             with open (file2,'r') as r2:
-                exons =exons_generater(r2,word,JOIN_GAP,CHIP_LEN,MAXINSERT)
-                wholeexon = WholeExon(r1,w,file1_column,ROW_STEP)
+                exons =exons_generater(r2,word,join_gap,chip_len,maxinsert)
+                wholeexon = WholeExon(r1,w,file1_column,row_step)
                 wholeexon.wholeexonseq(exons,file1_column)
     print('\ndown. outfile: %s'%write)
-def get_all(defaults):
-    filex,filey=defaults['filex'],defaults['filey']
-    file1,file2,file3=defaults['file1'],defaults['file2'],defaults['file3']
-    ver=defaults['ver']
-    get_chr_seq(filex,file1,ver)
-    get_exon_ano(filey,file2,ver)
-    get_exon_list(file1,file2,file3)
-def get_phred_fre(file,write,plus):
-    print('get phred frequencies from %s...'%file)
-    frequencies={}
-    readlen=get_row_column(file,'+',1,'re')
-    for x in range(1,readlen+1):
-        frequencies['pos%d_frequencies'%x]=[0]*43
-    with open(file,'r') as f:
-        i =0
-        for line in f.readlines():
-            i+=1
-            if i%4==0:
-                row_fastq=line.strip()
-                x=1
-                for char in row_fastq:
-                    frequencies['pos%d_frequencies'%x][char2phred(char,plus)]+=1
-                    x=x+1
-            if i%40000==0:
-                print(i,end='\r')
-    with open(write,"w") as f:
-        json.dump(frequencies, f)
-    print('\ndown. outfile: %s'%write)
 
 
-
-if __name__ == '__main__':
-    help='''
-    init -seq -filex -file1 -ver    : get chromosome sequence from filex, generate file1
-    init -ano -filey -file2 -ver    : get exon annotation from filey, generate file2
-    init -list -file1 -file2 -file3 -ver :get exonlist from file1,file2, generate file3
-    init -all                       :excute above all according setting,py
-    phred -filez -file4 -XX         : get qphred frequencies from file,generate 'phred.json'
-    view -file3                     : view exonlist's exon sequence
-    '''
-    print(help)
-    opera=input('>')
-    while(opera.strip()!='exit'):
-        if opera.strip=='help':
-            print(help)
-        elif re.match(r'init -seq',opera):
-            info=opera.split(' -')
-            if len(info)>=5:
-                filex,file1,ver=info[2:]
-                get_chr_seq(filex,file1,ver)
-        elif re.match(r'init -ano',opera):
-            info=opera.split(' -')
-            if len(info)>=5:
-                fiely,file2,ver=info[2:]
-                get_exon_ano(fiely,file2,ver)
-        elif re.match(r'init -list',opera):
-            info=opera.split(' -')
-            if len(info)>=6:
-                file1,file2,file3,ver=info[2:]
-                get_exon_list(file1,file2,file3)
-        elif re.match(r'init -all',opera):
-            get_all(DEFAULTS)
-        elif re.match(r'phred',opera):
-            info=opera.split(' -')
-            if len(info)>=3:
-                filex,file4,plus=info[1:]
-                get_phred_fre(filex,file4,PHRED)
-        elif re.match(r'view',opera):
-            info=opera.split(' -')
-            if len(info)>=2:
-                file=info[1]
-                view.view(file)
-        opera=input('>')
+def get_exons(file):
+    ''' from every row in flie get exon info and yield exon object'''
+    line=file.readline()
+    while(line):
+        m = re.match(r'^chr([\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)\t\d*\t(\d*)',line)
+        if m:
+            # if m is exon title ,then store this exon's sequence
+            seq,line=get_seq(file)
+            yield Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(m.group(5)))
+        else:
+            line=file.readline()

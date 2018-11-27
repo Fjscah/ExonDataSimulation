@@ -1,42 +1,20 @@
 import json
 import random
 import re
-import shutil
 import sys
 import time
-from random import choice
 
 import mutation
-from exon import Exon,get_seq
-from setting import (ACCURACY_RATE, CHIP_LEN, DEEPTH, INSERT, ROW_STEP,
-                     SUBSTITUTION,PHRED)
-from view import chr_exon_num, show_chr_exon_num
+from exon import Exon
+from exonlist import get_exons
+from phred import random_qphred
+from setting import (ACCURACY_RATE, CHIP_LEN, DEEPTH, INSERT_D,INSERT_E, PHRED, ROW_STEP,
+                     SUBSTITUTION,DEFAULTS,ERR_PH)
+from view import get_chr_exon_num, show_chr_exon_num
 
 ATCG=('A','T','C','G','a','t','c','g')
 COMPLEMENT={'A':'T','G':'C','C':'G','T':'A'}
 
-
-'''
-def random_weight_choice(lists):
-    summ=numpy.sum(lists,axis=0)[1]
-    t = random.randint(1, summ)
-    for i, val in lists:
-        t -= val
-        if t <= 0:
-            return chr(i+33)
-    if t>0:
-        input('kkkkkkkkkkkkkkkkk')
-'''
-
-
-def random_qphred(rang,frequencies,plus=33):
-    s=''
-    for x in range(1,len(frequencies)+1):
-        weights=frequencies['pos%d_frequencies'%x]
-        num=random.choices(rang,weights=weights)
-        char=chr(num[0]+plus)
-        s=s+char
-    return s
 
 def add_read_err(read,phred,accuracy=ACCURACY_RATE):
     size=len(read)
@@ -46,60 +24,67 @@ def add_read_err(read,phred,accuracy=ACCURACY_RATE):
         pich=random.randint(0,2)
         read[n]=SUBSTITUTION[read[n].upper()][pich]
         phred_value=ord(phred[n])-33
-        if phred_value>10:
-            phred[n]=chr(ord(phred[n])-10)
+        if phred_value>ERR_PH:
+            phred[n]=chr(ord(phred[n])-ERR_PH)
         else:
             phred[n]=chr(33)
+
 def complementation(read):
     l=[]
     for char in read:
         l.append(COMPLEMENT[char.upper()])
     return l
-def PEread(seq,length,frequencies,readlen):
+
+def PEread(seq,length,frequencies,readlen,exoninsert):
     ''' get one inser's 2 reads'''
-    p1=INSERT+length-CHIP_LEN-1
-    cbp=random.randint(INSERT, p1)
-    sbp=random.randint(-INSERT+CHIP_LEN,0)
-    lbp=cbp+sbp
+    # chip pos on exon
+    cbp=random.randint(0,length-CHIP_LEN)
+    while(True):
+        # insertion length
+        insertion=round(random.normalvariate(INSERT_D,INSERT_E))
+        # chip pos on inseriton
+        sbp=random.randint(0,insertion-CHIP_LEN)
+        # insertion pos on exon
+        lbp=exoninsert+cbp-sbp
+        if lbp<0:
+            insertion=lbp+insertion
+            lbp=0
+        rbp=lbp+insertion-1
+        if rbp+1>length+2*exoninsert:
+            insertion=length+2*exoninsert-rbp-1+insertion
+            rbp=length+2*exoninsert
+        if insertion>=readlen:
+            raise Exception("rbp+1>length+2*exoninsert")
+            #break
     l=[]
-    for n in range(INSERT):
-        char =seq[n+lbp]
+    for n in range(lbp,rbp):
+        char =seq[n]
         if char in ATCG:
             l.append(char.upper())
         else :
-            l.append(choice(ATCG))
+            raise Exception("error :can't indentify",char)
+            #l.append(random.choice(ATCG))
     read1=l[0:readlen]#list
     read2=complementation(l[-1:-1-readlen:-1])#list
-    phred1=list(choice(frequencies))
-    phred2=list(choice(frequencies))
+    phred1=list(random.choice(frequencies))
+    phred2=list(random.choice(frequencies))
     add_read_err(read1,phred1)
     add_read_err(read2,phred2)
     return ''.join(read1) , ''.join(read2),''.join(phred1),''.join(phred2)
-
-def get_exon(file):
-    ''' from every row in flie get exon info and yield exon object'''
-    line=file.readline()
-    while(line):
-        m = re.match(r'^chr([\d]*)\t(\d*)\t(\d*)\t([\w\.\-]*)\t\d*\t(\d*)',line)
-        if m:
-            # if m is exon title ,then store this exon's sequence
-            seq=get_seq(file)
-            yield Exon(m.group(1),int(m.group(2)),int(m.group(3)),m.group(4),seq,insert=int(m.group(5)))
-        else:
-            line=file.readline()
 
 def fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen):
     ''' one exon's all fastq reault be writed to w'''
     print('writing chr %s - exon : %s  - %s' %(exon.chr,exon.exon_id,exon.begin) ,end='\r')
     if 'N' in exon.seq:
-        print('\n'+''.join(exon.seq))
+        print('error: not output \n'+''.join(exon.seq))
+        return
     exon_id=exon.exon_id
     seq,length=list(exon.seq),exon.length
     for x in mutation_types:
         copy_num=mutation_types[x].haplots[0].get_normal_num(exon_id)+mutation_types[x].haplots[1].get_normal_num(exon_id)
-        turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT/100)
+        turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT_D/100)
         for y in range (turns):
-            read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen)
+            read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen,exon.insert)
             w1.write('@%s:%s:%d/1\n'% (exon_id,x,y))
             w1.write(read1+'\n')
             w1.write('+\n')
@@ -111,11 +96,11 @@ def fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen):
     for x in mutation_types:
         for z in range(2):
             if exon_id in mutation_types[x].haplots[z].mutations:
-                for seq,length,copy_num,onemutation in exon.get_new_seq((mutation_types[x].haplots[z].mutations[exon_id].snp_mutations),CHIP_LEN):
-                    turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT/100)
+                for seq,length,copy_num,onemutation in exon.get_new_seq((mutation_types[x].haplots[z].mutations[exon_id].abnormal_mutations),CHIP_LEN):
+                    turns=round(length*mutation_types[x].percent*copy_num*DEEPTH/2/INSERT_D/100)
                     seq=list(seq)
                     for y in range(turns):
-                        read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen)
+                        read1,read2,phred1,phred2=PEread(seq,length,frequencies,readlen,exon.insert)
                         w1.write('@%s:%s:%d:%d:%s/1\n'% (exon_id,x,z,y,onemutation))
                         w1.write(read1+'\n')
                         w1.write('+\n')
@@ -131,19 +116,17 @@ def fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen):
 
 
 if __name__ == '__main__':
-
+    ename,qname,mname=DEFAULTS['file3'],DEFAULTS['file4'],DEFAULTS['filew']
+    if len(sys.argv)==4:
+        pyname,ename,qname,mname=sys.argv
 
     #set and print gene mutation type
-    # mutafile='mutations_setting.txt'
-    mutation_types=mutation.set_mutation()
-    if mutation=='exit':
-        exit
-    input('press Enter to continue...')
+    mutation_types=mutation.file_mutation(mname)
+    #input('press Enter to continue...')
 
     # initial qphred frequencies
-    phredfile=input('please input qphred file : ')
     print('initial qphred...')
-    with open(phredfile,"r") as f:
+    with open(qname,"r") as f:
         frequencies=json.load(f)
         #frequencies['pos%d_frequencies'%x]=list(enumerate(frequencies['pos%d_frequencies'%x]))
         #frequencies['pos%d_frequencies'%x].sort(key=lambda y:y[1],reverse=True) 
@@ -160,17 +143,9 @@ if __name__ == '__main__':
     readlen=len(frequencies)
 
 
-
-
-    # set filein name
-    filein=input('please input exonlist file : ')#'REF_exonlist(insert).txt'
-
     # get every chr's exon number
-    #print("getting exon number on every chromosome...")
-    #total_exon=countrow(filein,r'^chr([\w\d]*)\t(\d*)\t(\d*)\t([\w\.]*)')
-    #print("exon count: ",total_exon)
     '''
-    exon_nums=chr_exon_num(filein)
+    exon_nums=get_chr_exon_num(filein)
     show_chr_exon_num(exon_nums)
     '''
     #print('down')
@@ -184,8 +159,8 @@ if __name__ == '__main__':
     with open("R1_fastq%s.fastq" % t,'w') as w1:
         with open("R2_fastq%s.fastq" % t,'w') as w2:
             # one exon generate to mutation_types
-            with open(filein,'r')as r:
-                for exon in get_exon(r):
+            with open(ename,'r')as r:
+                for exon in get_exons(r):
                     fastq_exon(w1,w2,exon,frequencies,mutation_types,readlen)
     print('\n***down***')
     time_end=time.time()

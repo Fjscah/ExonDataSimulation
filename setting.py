@@ -1,10 +1,10 @@
-'''readout.py setting'''
-ACCURACY_RATE= 0.8
-DEEPTH=100
+'''others'''
+ROW_STEP=2
+PHRED33=33
+PHRED64=64
+PHRED=PHRED33
 CHIP_LEN=10
-SUBSTITUTION={'A':('G','C','T','G'),'G':('A','C','T','A'),'C':('T','A','G','T'),'T':('C','G','A','C')} 
-INSERT=200
-'''exonlist.py setting'''
+'''initial.py setting'''
 MAXINSERT=200
 JOIN_GAP=200
 UCSC={
@@ -25,15 +25,23 @@ COM={
     'list':r'chr([\w\d]*).*?(\d+)[\s\w]*?(\d+).*'
     }
 CUSTOMS={}
-DEFAULTS={
-    'filex':'NCBI_gh38.fna',
-    'filey':'NCBI_hg38.gff',
-    'file1':'NCBI_hg38ref.fna',
-    'file2':"NCBI_hg38exon.gff",
-    'file3':"NCBI_hg38list.txt",
-    'fileq':'qphred.fasq',
-    'ver':NCBI}
 
-'''others'''
-ROW_STEP=2
-PHRED=33
+DEFAULTS={
+    'filew':'mutations_setting.txt',
+    'filex':'NCBI_gh38.fna',
+    'file1':'NCBI_hg38ref.fna',
+    'filey':'NCBI_hg38.gff',
+    'file2':"NCBI_hg38exon.gff",
+    'file3':"test.txt",#NCBI_hg38list.txt",
+    'filez':'qphred.fasq',
+    'ASCII':PHRED,
+    'file4':'phred.json',
+    'ver':NCBI}
+'''readout.py setting'''
+ACCURACY_RATE= 0.8
+DEEPTH=100
+SUBSTITUTION={'A':('G','C','T','G'),'G':('A','C','T','A'),'C':('T','A','G','T'),'T':('C','G','A','C')} 
+INSERT_E=200
+INSERT_D=15
+ERR_PH=3
+
