@@ -1,47 +1,40 @@
 '''others'''
-ROW_STEP=2
-PHRED33=33
-PHRED64=64
-PHRED=PHRED33
-CHIP_LEN=10
+ROW_STEP = 1
+CHIP_LEN = 10
+INSERT_E = 300
+MAXINSERT = 300
+JOIN_GAP = 200
 '''initial.py setting'''
-MAXINSERT=200
-JOIN_GAP=200
-UCSC={
-    'seq':('>chr1','>chr2','>chr3','>chr4','>chr5','>chr6','>chr7','>chr8','>chr9','>chr10',
-    '>chr11','>chr12','>chr13','>chr14','>chr15','>chr16','>chr17','>chr18','>chr19',
-    '>chr20','>chr21','>chr22','>chrX','>chrY','>chrM'),
-    }
-NCBI={
-    'seq':r'>NC',
-    'ano':'exon',
-    'list':r'NC_0*(\d*).*\sexon\s.*?(\d+)[\s\w]*?(\d+)'
-    }
-GENCODE={
-    'ano':'exon',
-    'list':r'chr(\d*).*\sexon\s.*?(\d+)[\s\w]*?(\d+)'
-    }
-COM={
-    'list':r'chr([\w\d]*).*?(\d+)[\s\w]*?(\d+).*'
-    }
-CUSTOMS={}
+UCSC = {
+    'wgs': r'>chr\w{1,2}\s*\n',
+}
+NCBI = {
+    'wgs': r'>NC',
+    'bed': r'NC_0*(\d*).*\sexon\s.*?(\d+)[\s\w]*?(\d+)'
+}
+GENCODE = {
+    'bed': r'chr(\d*).*\sexon\s.*?(\d+)[\s\w]*?(\d+)'
+}
+COM = {
+    'bed': r'chr([\w\d]*).*?(\d+)[\s\w]*?(\d+).*'
+}
+CUSTOMS = {}
 
-DEFAULTS={
-    'filew':'mutations_setting.txt',
-    'filex':'NCBI_gh38.fna',
-    'file1':'NCBI_hg38ref.fna',
-    'filey':'NCBI_hg38.gff',
-    'file2':"NCBI_hg38exon.gff",
-    'file3':"test.txt",#NCBI_hg38list.txt",
-    'filez':'qphred.fasq',
-    'ASCII':PHRED,
-    'file4':'phred.json',
-    'ver':NCBI}
+DEFAULTS = {
+    'filew': 'mutations_setting.txt',
+    'filex': 'NCBI_gh38.fna',
+    'file1': 'NCBI_hg38ref.fna',
+    'filey': 'NCBI_hg38.gff',
+    'file2': "NCBI_hg38exon.gff",
+    'file3': "NCBI_hg38list.txt ",  
+    'filez': 'phred.fasq',
+    'file4': 'phred.json',
+    'ver': NCBI}
 '''readout.py setting'''
-ACCURACY_RATE= 0.8
-DEEPTH=100
-SUBSTITUTION={'A':('G','C','T','G'),'G':('A','C','T','A'),'C':('T','A','G','T'),'T':('C','G','A','C')} 
-INSERT_E=200
-INSERT_D=15
-ERR_PH=3
-
+ACCURACY_RATE = 1.0
+ACCURACY_RATE_D = 0.0
+DEPTH = 50
+SUBSTITUTION = {'A': ('G', 'C', 'T', 'G'), 'G': ('A', 'C', 'T', 'A'), 'C': (
+    'T', 'A', 'G', 'T'), 'T': ('C', 'G', 'A', 'C')}
+INSERT_D = 15
+ERR_PH = 3
