@@ -1,5 +1,3 @@
-# ExonDataSimulation
-it's a simulation for wes , aimed at assessing tumor heterogeneity analysis software
 # SIMU--WES/WGS data simulation
 
 ## 基本介绍
