@@ -1,8 +1,6 @@
 from copy import deepcopy
 from functools import reduce
-from profile import *
-
-from filefunc import *
+from basic import *
 from sequence import *
 
 
@@ -153,7 +151,7 @@ class Segment(object):
                 filed, chromosome.end, pos, column, row_step)
         elif isinstance(self._sequence, list):
             for x in self._sequence:
-                x.search_seq(filed, chrs_pos, column, row_step)
+                x.search_seq(filed, infos, column, row_step)
 
     def del_seq(self):
         if isinstance(self._sequence, Sequence):
@@ -390,7 +388,7 @@ class Haploid(object):
 
     def write_muta_seq(self, ref, outfile):
         infos = Fasta.fasta_file_info(ref)
-        print('write mutation sequence from ',ref,end='\r')
+        print('write mutation sequence from ',ref)
         with open(ref, 'r', newline='\n') as filed:
             with open(outfile, 'a', newline='\n') as writed:
                 for x in sorted(self.chromosomes.keys()):
@@ -402,9 +400,9 @@ class Haploid(object):
                             filed, infos, infos['column'], infos['step'])
                         y.write_fasta(writed, COLUMN)
                         y.del_seq()
-        print('down')
+        print('down. outfile :',outfile)
     def write_muta_bed(self, reg, outfile):
-        print('reposition file :',reg)
+        print('reposition from file :',reg)
         with open(outfile,'w',newline='\n')as f:
             pass
         chrrs = Bed.get_bed_info(reg)
@@ -443,11 +441,11 @@ class Haploid(object):
                 ranges = merge_ranges(ranges, JOIN_GAP)
             with open(outfile, 'a', newline='\n') as filed:
                 for x in ranges:
-                    if x[1]-x[0]>ELEN: # filtrate too shor region
+                    if x[1]-x[0]>E_LEN: # filtrate too shor region
                         filed.write('%s\t%s\t%s\n' % (chrr, x[0], x[1]))
                     else:
                         print('region is too short -> ignore it')
-        print('\ndown')
+        print('down. outfile :',outfile)
             
 
 class Polyploid(object):
@@ -476,8 +474,8 @@ class Polyploid(object):
             x.neaten()
 
     @staticmethod
-    def self_poly_formufile(mutafile, poly):
-        polyploid = Polyploid(poly[0], poly[1], *([Haploid()]*len(REFERENCES)))
+    def self_poly_formufile(mutafile, idd,content):
+        polyploid = Polyploid(idd, content, *([Haploid()]*len(REFERENCES)))
         with open(mutafile, 'r', newline='\n') as filed:
             for line in filed.readlines():
                 if line[0] != '#' and line[0] != '\n':
@@ -489,9 +487,10 @@ class Polyploid(object):
         return polyploid
 
 
-def ini_muta(inireferences, iniregions, mutation, inifile, poly):
+def ini_muta(inireferences, iniregions, mut, inifile):
+    mutation=mut[2]
     # load one polyoid mutation set
-    polyploid = Polyploid.self_poly_formufile(mutation, poly)
+    polyploid = Polyploid.self_poly_formufile(mutation, mut[0],mut[1])
     polyploid.show_polyploid()
     #!!!!!
     # output its(one polyoid) targed region on mutation reference

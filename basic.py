@@ -1,7 +1,47 @@
+import configparser
 import functools
 import random
 import re
+import time
+from enum import Enum
 from types import MethodType
+
+
+'''
+import argparse
+parser=argparse.ArgumentParser()
+parser.parse_args()
+'''
+
+
+def get_value(config, section, t, *options):
+    values = []
+    if t == int:
+        for x in options:
+            values.append(config.getint(section, x))
+        return values
+    elif t == float:
+        for x in options:
+            values.append(config.getfloat(section, x))
+        return values
+    elif t == bool:
+        for x in options:
+            values.append(config.getboolean(section, x))
+        return values
+    else:
+        for x in options:
+            values.append(config.get(section, x))
+        return values
+
+
+def get_dict(config, section):
+    dictt = {}
+    options = config.options(section)
+    t = 0
+    for x in options:
+        t = eval(config.get(section, x))
+        dictt[x.upper()] = t
+    return dictt
 
 
 def equal_text(line, text, match='=='):
@@ -65,8 +105,9 @@ def get_column_row(file, text, aim=0, match='re', tail=False, **pos):
         else:
             return 0
 
+
 def tidy_small_word(text, column,  cur=0):
-    words=[]
+    words = []
     x = column-cur
     words.append(text[0:x])
     l = len(text)
@@ -78,6 +119,8 @@ def tidy_small_word(text, column,  cur=0):
     else:
         cur = column
     return words
+
+
 def write_small_word(writed, text, column,  cur=0):
     ''' write text to a opend file with coulum words every row'''
     x = column-cur
@@ -408,3 +451,38 @@ def log_file(func):
         print('output file: %s' % args[1])
         return func(*args, **kw)
     return wrapper
+
+
+modes = Enum('mode', ('WES', 'WGS'))
+pairs = Enum('pair', ('SE', 'PE', ))
+mutation_ways = (Enum('mutation_way', ('table', 'formula', 'auto')))
+qphs = Enum('qph', ('sanger', 'soleax', ))
+conf = configparser.ConfigParser()
+conf.read('profile.ini')
+CHIP_LEN, JOIN_GAP, E_LEN, FLANK_LEN = get_value(
+    conf, 'chip', int, "CHIP_LEN", "JOIN_GAP", "E_LEN", "FLANK_LEN")
+ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
+    conf, "error", float,  "ERROR_E", "ERROR_D", "SUBSTITUTION", "INSERTION", "DELETION")
+ERROR = conf.getboolean("error", "ERROR")
+DEPTH, MODE, PAIR = get_value(conf, 'read', int, "DEPTH", 'MODE', 'PAIR')
+MISMATCH = conf.getboolean("read", 'MISMATCH')
+LEGAL_N, INNER_N = get_value(conf, "sequence", bool, 'LEGAL_N', 'INNER_N')
+QPH, SEED = get_value(conf, "quality", int, "QPH", "SEED")
+CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS = get_value(
+    conf, 'file', str, "CD", "QUALITY", 'BED_INFO', "FASTA_INFO", 'REFERENCES', 'REGIONS', 'MUTATIONS')
+COLUMN, MEMORY, = get_value(conf, 'file', int, "COLUMN", "MEMORY")
+SEGMENT_E = conf.getint("segment", "SEGMENT_E")
+SEGMENT_D = conf.getfloat("segment", "SEGMENT_D")
+REFERENCES = 'REFERENCES='+REFERENCES
+REGIONS = 'REGIONS='+REGIONS
+MUTATIONS = 'MUTATIONS='+MUTATIONS
+exec(REFERENCES)
+exec(REGIONS)
+exec(MUTATIONS)
+FNA = get_dict(conf, "fna")
+BED = get_dict(conf, "bed")
+t = time.strftime('%Y%m%d_%H_%M_%S', time.localtime(time.time()))
+R1 = CD+"R1_%s.fastq" % (111)
+R2 = CD+"R2_%s.fastq" % (111)
+R0 = CD+"R_%s.fastq" % (111)
+conf = None

@@ -2,9 +2,7 @@ import collections
 import json
 import os
 import re
-from profile import *
-
-from filefunc import *
+from basic import *
 
 
 class Line(object):
@@ -150,7 +148,7 @@ class Sequence(Region):
 
     @property
     def mid_length(self):
-        return self.seq_length-2*self.flank_len
+        return self.seq_length-2*self._flank_len
 
     @property
     def seq_length(self):
@@ -201,12 +199,13 @@ class Sequence(Region):
     @staticmethod
     def self_fasta(strings):
         info = re.match(
-            r'>([\w\-\.]+)\t(\d*)\t(\d*)\t(\d*)\t(\d*)\t(\d*)', strings[0])
+            r'>([\w\-\.]+)\t(\d+)\t(\d+)\t(\d+)\t(\d*)\t(\d*)', strings)
         if info:
             idd, chrr,  begin, end, length, flank_len = str2int(
                 list(info.groups()))
             seq = ''.join(strings[1:])
             return Sequence(chrr, begin, end, idd, flank_len, seq)
+
 
     def get_fasta_head(self):
         '''return chr,begin,end,sequence_id,length,insert;split is tab'''
@@ -216,12 +215,12 @@ class Sequence(Region):
 
     def get_fasta(self, column):
         return [self.self_fasta_head]+get_words_text(self.seq, column)
-
+ 
     def wes_segment(self, readlen, chip_len=CHIP_LEN, insert_e=SEGMENT_E, insert_d=SEGMENT_D):
         ''' get one inser's 2 reads'''
         # chip pos on exon
-        length = self.seq_length
-        flank_len = self.flank_len
+        length = self.mid_length
+        flank_len = self._flank_len
         step = length//chip_len
         cbp = random.randint(0, step)*chip_len
         while(True):
@@ -242,7 +241,7 @@ class Sequence(Region):
                 rbp = length+2*flank_len-1
             if insertion >= readlen:
                 break
-        return self.seq[lbp:rbp]
+        return self._seq[lbp:rbp]
 
     def get_part_seq(self, pos1=None, pos2=None, relative=True):
         length = self.length
@@ -355,15 +354,18 @@ class Fasta(object):
             if re.match(r'>', line):
                 break
             seq.append(line.strip())
+            line = filed.readline()
         return ''.join(seq), line
 
     @staticmethod
-    def ini_ref(reffile, inifile, n):
+    def ini_ref(ref, inifile, n):
         '''
         get chromosomes sequence from one haploid, file must be in order
         otherwise chr x  may be rename other chr y
         '''
-        expression = REFMAT[REFERENCES.index(reffile)]['fna']
+        reffile=ref[0]
+        expression = FNA[ref[1]]
+        print(re.match(expression,'>NC00'))
         print("initing reference sequence from %s..." % reffile)
         chrr = 1
         with open(reffile, 'r') as filed:
@@ -382,7 +384,7 @@ class Fasta(object):
                         continue
                     else:
                         line = get_line_text(filed, expression, 0, 're')
-        print('down. outfile: %s                       ' % inifile)
+        print('down. outfile: %s  ' % inifile)
 
     ''' after Standardization'''
     @staticmethod
@@ -407,7 +409,7 @@ class Fasta(object):
                 Fasta.ini_exons(iniref, iniexome, sequences)
             except StopIteration:
                 print('\tstop.', end='')
-        print('\tdown. outfile: %s' % iniexome)
+        print('down. outfile: %s ' % iniexome)
 
     @staticmethod
     def analyse_infos(infos, chrr):
@@ -418,11 +420,18 @@ class Fasta(object):
         chromosome = Sequence.self_fasta_head(infos[str(chrr)]['chromosome'])
         pos = infos[str(chrr)]['pos']
         return chromosome, pos
-
+    @staticmethod
+    def chrs_info(infos):
+        chrrs=list(infos.keys())
+        chrrs.remove('column')
+        chrrs.remove('step')
+        chrrs=str2int(chrrs)
+        chrrs.sort()
+        return chrrs
     @staticmethod
     def fasta_file_info(file, *info):
         log = FASTA_INFO
-        print('get fasta info from :', file, end='\r')
+        print('get fasta info from :', file, end='...')
         with open(log, "r") as filed:
             try:
                 fastas_info = json.load(filed)
@@ -435,13 +444,13 @@ class Fasta(object):
             infos = {}
             with open(file, 'r')as f:
                 line = get_line_text(f, '>', 1, 're')
+                print(type(line))
                 column = len(line.strip())
                 step = len(line)-column
                 f.seek(0)
                 line = f.readline()
                 while(line):
-                    m = re.match('>', line)
-                    if m:
+                    if line[0]=='>':
                         m = Sequence.self_fasta_head(line)
                         if m.chr != echr:
                             infos[str(m.chr)] = {
@@ -462,6 +471,7 @@ class Fasta(object):
     @staticmethod
     def ini_exons(file, write, sequences, insert_e=SEGMENT_E):
         infos = Fasta.fasta_file_info(file)
+        echr=0
         with open(write, 'w', newline='\n') as writed:
             writed.write("#exonid\tchr\tbegin\tend\tlength\tflanklen\n")
             with open(file, 'r', newline='\n') as filed:
@@ -469,6 +479,9 @@ class Fasta(object):
                     chromosome, pos = Fasta.analyse_infos(infos, x.chr)
                     if not pos:
                         continue
+                    if echr!=chromosome.chr:
+                        echr=chromosome.chr
+                        print(chromosome.get_fasta_head(),end='\r')
                     column = infos['column']
                     step = infos['step']
                     x.id = chromosome.id+x.id
@@ -486,14 +499,14 @@ class Bed(object):
     '''Bed is a layout which includes chr,begin and end'''
     '''before Standardization'''
     @staticmethod
-    def ini_reg(regfile, inifile):
+    def ini_reg(reg, inifile):
         '''
         get aimed regions from bed file, file needn't be in order
         '''
+        regfile=reg[0]
         stanfile = inifile+'.temp'
         keys = set()
-        '''
-        expression=REGMAT[REGIONS.index(regfile)]['bed']
+        expression=BED[reg[1]]
         echr=None
         print('getting bed from file : %s'% regfile)
         with open(regfile,'r',newline='\n')as filed:
@@ -509,7 +522,6 @@ class Bed(object):
                         writed.write(str(chrr)+'\t'+m.group(2)+'\t'+m.group(3)+'\n')
         keys=list(keys)
         keys.sort()
-        print(keys)
         with open(BED_INFO,'r') as filed:
             try:
                 beds_info = json.load(filed)
@@ -518,9 +530,8 @@ class Bed(object):
         with open(BED_INFO,'w') as writed:
             beds_info[inifile]=keys
             json.dump(beds_info, writed)
-        '''
         Bed.sort_reg(stanfile, inifile, keys)
-
+        os.remove(stanfile)
     @staticmethod
     def get_bed_info(file):
         log = BED_INFO
@@ -567,7 +578,7 @@ class Bed(object):
                 ranges = merge_ranges(ranges, JOIN_GAP)
             with open(sortreg, 'a', newline='\n') as writed:
                 for y in ranges:
-                    if y[1]-y[0] > ELEN:  # filtrate too shor region
+                    if y[1]-y[0] > E_LEN:  # filtrate too shor region
                         s = '\t'.join([str(x), str(y[0]), str(y[1])])+'\n'
                         writed.write(s)
                     else:
@@ -638,11 +649,11 @@ class Quality(object):
         asc = 64
         with open(file, "r") as filed:
             frequencies = json.load(filed)
-        print('\n\tdown.')
         for x in frequencies['pos1_frequencies'].keys():
             if x in '1234456789+-*':
                 asc = 33
                 break
+        print('down.')
         return frequencies, asc
 
     @staticmethod

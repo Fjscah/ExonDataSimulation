@@ -2,21 +2,18 @@
 
 import os
 import sys
-import time
+
+
 from functools import reduce
-from profile import *
-
-from mutation import *
-from read import *
+from basic import *
 from sequence import *
+from mutation import * 
+from read import *
 
-'''
-import argparse
-parser=argparse.ArgumentParser()
-parser.parse_args()
-'''
+
 if __name__ == '__main__':
     time_start = time.time()
+    
     help = '''
     -ref          : get whole genome from filex , generate file3
     -reg          : get aimed and sorted annotation from filey, generate file2
@@ -28,24 +25,26 @@ if __name__ == '__main__':
     optional:
     -wes/wgs      : set the way to generate DNA segment
     -se/pe        : set the way to generate reads
+    if occur something wrong, try delete bed_info and fasta_info
     '''
     info = sys.argv
     print(info)
 
     if '-wes' in info:
-        MODE = modes.WES
+        MODE = modes.WES.value
     if '-wgs' in info:
-        MODE = modes.WGS
+        MODE = modes.WGS.value
     if '-pe' in info:
-        PAIR = pairs.PE
+        PAIR = pairs.PE.value
     if '-se' in info:
-        PAIR = pairs.SE
+        PAIR = pairs.SE.value
+    references=set(REFERENCES)
     regions = set(REGIONS)  # filtrate the same region file
-    inireferences = list(map(lambda x: CD+x+'.ini', REFERENCES))
-    iniregions = list(map(lambda x: CD+x+'.ini', regions))
-    iniexomes = list(map(lambda x: CD+x+'.exome', REFERENCES))
-    inimutations = list(map(lambda x: CD+x+'.ini', MUTATIONS))
-    stanfiles = list(map(lambda x: CD+x+'.temp', REGIONS))
+    inireferences = list(map(lambda x: CD+x[0]+'.ini', references))
+    iniregions = list(map(lambda x: CD+x[0]+'.ini', regions))
+    iniexomes = list(map(lambda x: CD+x[0]+'.exome', REFERENCES))
+    inimutations = list(map(lambda x: CD+x[2]+'.ini', MUTATIONS))
+    stanfiles = list(map(lambda x: CD+x[0]+'.temp', regions))
     iniquality = CD+QUALITY+'.ini'
     if not os.path.exists(BED_INFO):
         open(BED_INFO, 'a').close()
@@ -67,18 +66,18 @@ if __name__ == '__main__':
         for x, y, z in zip(inireferences, iniregions, iniexomes):
             Fasta.ini_exome(x, y, z)
     elif '-mut' in info:  # initialize mutations
-        for x, y, poly in zip(MUTATIONS, inimutations, POLYS):
-            ini_muta(inireferences, iniregions, x, y, poly)
+        for mut, y,  in zip(MUTATIONS, inimutations):
+            ini_muta(inireferences, iniregions, mut, y)
     elif '-read' in info:
-        if pairs.PE == PAIR:
+        if pairs.PE.value == PAIR:
             open(R1, 'w', newline='\n').close()
             open(R2, 'w', newline='\n').close()
-        elif PAIR == pairs.SE:
+        elif PAIR == pairs.SE.value:
             open(R0, 'w', newline='\n').close()
-        for x, poly in (inimutations, POLYS):
+        for x, mut in zip(inimutations, MUTATIONS):
             # polyoid 's id,content,mutationseq,inireferences,mutationsbed
             # mutationsbed can get from iniregions+polys
-            readout(inireferences, iniregions, iniquality, x, poly)
+            readout(inireferences, iniregions, iniquality, x, mut)
     elif '-view' in info:
         if len(info) >= 3:
             file = info[2]
