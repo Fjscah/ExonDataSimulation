@@ -71,31 +71,15 @@ class Segment(object):
                 length += x.theory_length
         if isinstance(t, Indel):
             length = t.theory_length
-        return length*self._cnv
+        return length*abs(self._cnv)
 
     @property
     def cnv(self):
         return self._cnv
 
     @staticmethod
-    def __unbracket(formula):
-        formula = formula.strip()
-        m = re.match(r'.*[*]([\-\d]+)$', formula)
-        if m:
-            cnv = int(m.group(1))
-            formula = formula.rstrip(' %s' % cnv)
-            formula = formula.rstrip('*').strip()[1:-1]
-        else:
-            cnv = 1
-            if formula[0] == '(':
-                formula = formula[1:-1]
-        formulas = re.findall(r'[^,]+', formula)
-        return formulas, cnv
-
-    @staticmethod
     def get_segment_formu(formula):
-        chrr, formula, cnv = re.match(
-            '(\d*)\((.*)\)\**(\d*)$', formula).groups()
+        chrr, formula, cnv = re.match('(\d*)\((.*)\)\**(-*\d*)$', formula).groups()
         try:
             cnv = int(cnv)
         except:
@@ -142,7 +126,9 @@ class Segment(object):
                 seq += x.seq
         elif isinstance(self._sequence, Indel):
             seq = self._sequence.alt
-        return seq*self._cnv
+        if self._cnv <0:
+            seq=seq[::-1]
+        return seq*abs(self._cnv)
 
     def search_seq(self, filed, infos, column, row_step):
         if isinstance(self._sequence, Sequence):
@@ -191,27 +177,35 @@ class Segment(object):
                     end = x.begin-1
                 elif l > -1:
                     end = x.begin
-                inserts.append((t.chr, cur, end, cur+length, end+length))
+                inserts.append((t.chr, cur, end, cur-t.begin, end-t.begin))
                 cur = end+1
             if t.end>end:
-                inserts.append((t.chr, cur, t.end, cur+length, t.end+length))
+                inserts.append((t.chr, cur, t.end, cur-t.begin, t.end-t.begin))
         if isinstance(t, list):
             for x in t:
                 l = length
-                length += x.theory_length
-                inserts += x.get_inserts(length)
-        l=self.theory_length//self._cnv
+                inserts += x.get_inserts(l)
+                l += x.theory_length
+        l=self.theory_length//abs(self._cnv)
+        if self._cnv==1:
+            return inserts
         insert=deepcopy(inserts)
-        for x in range(self._cnv):
-            length+=l
-            for x in insert:
-                inserts.append((x[0],x[1],x[2],x[3]+length,x[4]+length))
+        inserts=[]
+        if self._cnv>0:
+            for n in range(self._cnv):
+                for x in insert:
+                    inserts.append((x[0],x[1],x[2],x[3]+l*n+length,x[4]+l*n+length))
+        elif self._cnv<0:
+            length+=self.theory_length
+            for n in range(1+self._cnv,1):
+                for x in insert:
+                    inserts.append((x[0],x[1],x[2],-x[3]+l*n+length-1,-x[4]+l*n+length-1))
         return inserts
 
 
 class Muta(Sequence):
     def __init__(self, chrr=None, begin=None, end=None,  *segments):
-        super().__init__(chrr, begin, end, flank_len=FLANK_LEN)
+        super().__init__(chrr, begin, end, flank_len=0)
         self._segments = []
         self._segments += list(segments)
 
@@ -227,18 +221,6 @@ class Muta(Sequence):
     def chrs(self, chrs):
         self._chrs = chrs
 
-    @ staticmethod
-    def __unbracket(formula):
-        formula = formula.strip()
-        m = re.match(r'.*[*]([\-\d]+)$', formula)
-        if m:
-            cnv = int(m.group(1))
-            formula = formula.rstrip(' %s' % cnv)
-            formula = formula.rstrip('*').strip()[1:-1]
-        else:
-            cnv = 1
-            formula = formula[1:-1]
-        return formula, cnv
 
     @property
     def theory_length(self):
@@ -314,6 +296,7 @@ class Muta(Sequence):
 
     def get_inserts(self, length):
         inserts = []
+        length=self._begin+length
         for x in self._segments:
             inserts += x.get_inserts(length)
             length += x.theory_length
@@ -408,30 +391,19 @@ class Haploid(object):
         chrrs = Bed.get_bed_info(reg)
         for chrr in chrrs:
             print('reposition chromosome',chrr,' regions ',end='\r')
-            sss = []
             if chrr in self.chromosomes:
                 inserts = self.chromosomes[chrr].get_inserts()
                 sranges = self.chromosomes[chrr].get_dele_insert()
             else:
                 inserts=[]
                 sranges=[]
+            sss = []
             for schr in chrrs:
-                schr_insets = [x for x in inserts if x[0] == schr]
+                schr_insets = [x for x in inserts if int(x[0]) == schr]
                 if not schr_insets:
                     continue
                 ranges = Bed.get_ranges(reg, schr)
-                n = 0
-                for x in schr_insets:
-                    y = ranges[n]
-                    if y[1] <= x[1]:
-                        n += 1
-                        continue
-                    if ranges[n][0] >= x[2]:
-                        continue
-                    l = max(x[1], min(x[2], y[0]))
-                    r = min(x[2], max(x[1], y[1]))
-                    if l != r:
-                        sss.append((x[3]+l-x[1], x[4]+r-x[2]))
+                sss=cross_insert(schr_insets,ranges)
             ranges = Bed.get_ranges(reg, chrr)
             if sranges:
                 print('differ and insert chromosome',chrr,end='\r')

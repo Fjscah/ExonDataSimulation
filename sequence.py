@@ -235,13 +235,18 @@ class Sequence(Region):
             if lbp < 0:
                 insertion = lbp+insertion
                 lbp = 0
-            rbp = lbp+insertion-1
-            if rbp > length+2*flank_len-1:
-                insertion = length+2*flank_len-rbp-1+insertion
-                rbp = length+2*flank_len-1
+            rbp = lbp+insertion
+            if rbp > length+2*flank_len:
+                insertion = length+2*flank_len-rbp+insertion
+                rbp = length+2*flank_len
+            if ERROR:
+                num=round(ERROR_E*insertion)
+                extra=self._seq[rbp:rbp+num]
+            else :
+                extra=''
             if insertion >= readlen:
                 break
-        return self._seq[lbp:rbp]
+        return self._seq[lbp:rbp],extra
 
     def get_part_seq(self, pos1=None, pos2=None, relative=True):
         length = self.length
@@ -282,11 +287,11 @@ class Sequence(Region):
         write_small_word(writed, self.seq, column)
         writed.write('\n')
 
-    def filtrate(self, insert_e, split=False, char='N'):
-
+    def filtrate(self, effect_len, split=False, char='N'):
         ranges, seqs = not_indexs(self.mid, char)
         sequences = []
         if ranges and ranges[0][1]-ranges[0][0]+1 < self.length:
+            # if aimed sequence has N
             if not split:
                 print('aimed region has N -> ignore it')
             elif split:
@@ -295,25 +300,36 @@ class Sequence(Region):
                 for x in range(len(ranges)):
                     begin = self.begin+ranges[x][0]
                     end = self.begin+ranges[x][1]
-                    if end-begin+1 < insert_e:
+                    if end-begin+1 < effect_len:
                         print('splited region is short -> ingore it')
                         continue
                     idd = self.id+'.%d' % (i)
                     sequences.append(
                         Sequence(self.chr, begin, end, idd, 0, seqs[x]))
                     i += 1
+            print(self.mid)
         elif ranges:
+            # if aimed doesn't have N
             l = self.lflank.rfind('N')
             r = self.rflank.find('N')
-            if l != -1 or r != -1:
+            # if flank has N
+            if l != -1:
+                sl=l+1
+            else:
+                sl=0
+            if r != -1:
+                sr=self._flank_len-r
+            else:
+                sr=0
+            s = max(sl,sr)
+            if s:
                 print('flank region has N -> short it')
-                s = max(l+1, self._flank_len-r-1)
-                self.flank_len -= s
-                self.seq = self.seq[-s:s]
-            if self.length > insert_e:
+                self.seq = self.seq[s:-s]
+                self._flank_len -= s
+            if self.all_length > effect_len:
                 sequences.append(self)
             else:
-                print(' filtrated region id short -> ignore it')
+                print("filtrated region's length %s is short -> ignore it" %(self.all_length-effect_len))
         return sequences
 
 
@@ -388,25 +404,26 @@ class Fasta(object):
 
     ''' after Standardization'''
     @staticmethod
-    def iterator_fasta(filed, idd=''):
-        line = filed.readline()
-        while(line):
-            if re.match('>'+idd, line):
-                sequence = Sequence.self_fasta(line)
-                seq, line = Fasta.get_small_seq(filed)
-                sequence.seq = seq
-                yield sequence
-            else:
-                line = filed.readline()
+    def iterator_fasta(file, idd=''):
+        with open(file,'r',newline='\n')as filed:
+            line = filed.readline()
+            while(line):
+                if re.match('>'+idd, line):
+                    sequence = Sequence.self_fasta(line)
+                    seq, line = Fasta.get_small_seq(filed)
+                    sequence.seq = seq
+                    yield sequence
+                else:
+                    line = filed.readline()
 
     @staticmethod
-    def ini_exome(iniref, inireg, iniexome):
+    def ini_exome(iniref, inireg, iniexome,effect_len=E_LEN):
         '''get aimed sequence from chromosome sequence and bed'''
         print("getting exome from : %s , %s" % (iniref, inireg))
         with open(inireg, 'r') as filed2:
             sequences = Bed.iterator_sequences(filed2)
             try:
-                Fasta.ini_exons(iniref, iniexome, sequences)
+                Fasta.ini_exons(iniref, iniexome, sequences,effect_len)
             except StopIteration:
                 print('\tstop.', end='')
         print('down. outfile: %s ' % iniexome)
@@ -444,7 +461,6 @@ class Fasta(object):
             infos = {}
             with open(file, 'r')as f:
                 line = get_line_text(f, '>', 1, 're')
-                print(type(line))
                 column = len(line.strip())
                 step = len(line)-column
                 f.seek(0)
@@ -469,7 +485,7 @@ class Fasta(object):
         return infos
 
     @staticmethod
-    def ini_exons(file, write, sequences, insert_e=SEGMENT_E):
+    def ini_exons(file, write, sequences, effect_len=E_LEN):
         infos = Fasta.fasta_file_info(file)
         echr=0
         with open(write, 'w', newline='\n') as writed:
@@ -486,8 +502,8 @@ class Fasta(object):
                     step = infos['step']
                     x.id = chromosome.id+x.id
                     x.search_seq(filed, chromosome.end, pos, column, step)
-                    if LEGAL_N:
-                        for y in x.filtrate(insert_e, INNER_N):
+                    if FLI_N:
+                        for y in x.filtrate(effect_len, INNER_N):
                             y.write_fasta(writed, COLUMN)
                             y.del_seq()
                     else:
@@ -582,7 +598,7 @@ class Bed(object):
                         s = '\t'.join([str(x), str(y[0]), str(y[1])])+'\n'
                         writed.write(s)
                     else:
-                        print('region is too short -> ignore it')
+                        print("region's length %s is too short -> ignore it"% (y[1]-y[0]))
 
     @staticmethod
     def get_ranges(file, chrr):
@@ -720,7 +736,8 @@ def view(file):
                 texts=''.join(get_words(filed, begin, length, MEMORY, column, step,pos=pos))
                 texts=tidy_small_word(texts,100)
                 for text in texts:
-                    print(text)
+                    print(text,end='')
+                print()
             else:
                 print('cannot idendify instruction' )
             line = input('>')

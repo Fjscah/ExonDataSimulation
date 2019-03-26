@@ -126,6 +126,8 @@ def write_small_word(writed, text, column,  cur=0):
     x = column-cur
     writed.write(text[0:x])
     l = len(text)
+    if l<=x:
+        return cur+l
     for x in range(column-cur, l, column):
         writed.write('\n'+text[x:x+column])
     # writed.write('\n'+text[x:x+column])
@@ -158,22 +160,21 @@ def get_words(filed, begin, length, memory, column, step, pos=-1):
     seqs = []
     s, l = [], memory
     line = filed.readline()
-    while(line):
+    while(line and length>0):
         line = line.strip()
-        t = len(line)
-        length -= t
+        length -= len(line)
         if length < 0:
-            s.append(line[:length])
-            break
-        else:
-            s.append(line)
-        l -= t
-        if l < 0:
+            line=line[:length]
+        l-=len(line)
+        if l<0:
+            s.append(line[:l])
             s = ''.join(s)
             seqs.append(s)
             s = [line[l:]]
             l = memory-len(s[0])
-        line = filed.readline().strip()
+        else:
+            s.append(line)
+        line = filed.readline()
     if s:
         s = ''.join(s)
         seqs.append(s)
@@ -285,22 +286,23 @@ def differ_range(elist, slist):
 
 
 def differ_insert_ranges(elist, slist):
-    l = len(slist)
-    if not l:
+    ll = len(slist)-1
+    if not ll:
         return elist
     elist.sort()
     slist.sort()
     n, t, nlist = 0, 0, []
     y = slist[n]
     for x in elist:
-        while(x[0] >= y[1]):
+        while(x[0] >= y[1] and n<ll):
             t += y[2]-y[1]+y[0]-1
             n += 1
-            if n >= l:
+            if n >= ll:
                 break
             y = slist[n]
-        if n >= l:
-            break
+        if n >= ll:
+            nlist.append((x[0]+t, x[1]+t))
+            continue
         if y[0] > x[1]:
             nlist.append((x[0]+t, x[1]+t))
             continue
@@ -309,10 +311,48 @@ def differ_insert_ranges(elist, slist):
             r = min(x[1], max(x[0], y[1]))
             if l != x[0]:
                 nlist.append((x[0]+t, l+t))
-            t += y[2]-y[1]+y[0]-1
             if r != x[1]:
+                t += y[2]-y[1]+y[0]-1
                 nlist.append((r+t, x[1]+t))
+                n+=1
+                if n >= ll:
+                    continue   
+                y=slist[n]
     return nlist
+def cross_insert(elist,slist):
+    '''elist is chr,b,e,nb,ne'''
+    nlist=[]
+    elist.sort()
+    ll=len(slist)
+    n, nlist = 0,  []
+    y = slist[n]
+    for x in elist:
+        while(x[1] >= y[1]):
+            n += 1
+            if n >= ll:
+                break
+            y = slist[n]
+        if n >= ll:
+            break
+        t=n
+        while(x[2]>=y[0]):
+            l = max(x[1], min(x[2], y[0]))
+            r = min(x[2], max(x[1], y[1]))
+            if l != r:
+                if x[4]>=x[3]:
+                    nlist.append((x[3]+l-x[1], x[4]+r-x[2]))
+                else:
+                    nlist.append((x[4]-r+x[2], x[3]-l+x[1]))
+            n += 1
+            if n >= ll:
+                break
+            y = slist[n]
+        if n >= ll:
+            break
+        n=t
+        y = slist[n]
+    return nlist
+
 
 
 def in_range(plist, clist):
@@ -458,7 +498,7 @@ pairs = Enum('pair', ('SE', 'PE', ))
 mutation_ways = (Enum('mutation_way', ('table', 'formula', 'auto')))
 qphs = Enum('qph', ('sanger', 'soleax', ))
 conf = configparser.ConfigParser()
-conf.read('profile.ini')
+conf.read('profile1.ini')
 CHIP_LEN, JOIN_GAP, E_LEN, FLANK_LEN = get_value(
     conf, 'chip', int, "CHIP_LEN", "JOIN_GAP", "E_LEN", "FLANK_LEN")
 ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
@@ -466,7 +506,7 @@ ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
 ERROR = conf.getboolean("error", "ERROR")
 DEPTH, MODE, PAIR = get_value(conf, 'read', int, "DEPTH", 'MODE', 'PAIR')
 MISMATCH = conf.getboolean("read", 'MISMATCH')
-LEGAL_N, INNER_N = get_value(conf, "sequence", bool, 'LEGAL_N', 'INNER_N')
+FLI_N, INNER_N = get_value(conf, "sequence", bool, 'FLI_N', 'INNER_N')
 QPH, SEED = get_value(conf, "quality", int, "QPH", "SEED")
 CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS = get_value(
     conf, 'file', str, "CD", "QUALITY", 'BED_INFO', "FASTA_INFO", 'REFERENCES', 'REGIONS', 'MUTATIONS')
@@ -476,13 +516,17 @@ SEGMENT_D = conf.getfloat("segment", "SEGMENT_D")
 REFERENCES = 'REFERENCES='+REFERENCES
 REGIONS = 'REGIONS='+REGIONS
 MUTATIONS = 'MUTATIONS='+MUTATIONS
+if FLANK_LEN<SEGMENT_E-E_LEN:
+    FLANK_LEN=SEGMENT_E
 exec(REFERENCES)
 exec(REGIONS)
 exec(MUTATIONS)
+BED_INFO=CD+BED_INFO
+FASTA_INFO=CD+FASTA_INFO
 FNA = get_dict(conf, "fna")
 BED = get_dict(conf, "bed")
 t = time.strftime('%Y%m%d_%H_%M_%S', time.localtime(time.time()))
-R1 = CD+"R1_%s.fastq" % (111)
-R2 = CD+"R2_%s.fastq" % (111)
-R0 = CD+"R_%s.fastq" % (111)
+R1 = CD+"R1_%s.fastq" % (t)
+R2 = CD+"R2_%s.fastq" % (t)
+R0 = CD+"R_%s.fastq" % (t)
 conf = None
