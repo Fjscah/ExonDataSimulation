@@ -242,9 +242,10 @@ def value2positive(value):
         return value
 
 
-def merge_ranges(elist, join_gap):
+def merge_ranges(elist, join_gap,effect_len=0):
     '''llist like [(x1,y1),(x2,y2),(x3,y3)]'''
     nlist = []
+    print('join_gap=',join_gap)
     if len(elist) <= 1:
         return elist
     else:
@@ -252,15 +253,21 @@ def merge_ranges(elist, join_gap):
         size = len(elist)
         x = 0
         y = 1
+        #a=0
         end = elist[x][1]
         while(y <= size-1):
             if end+1+join_gap >= elist[y][0]:
+                #t=end
                 end = max(end, elist[y][1])
+                #a+=1
+                #print('+++++',elist[y],'end',t)
                 y += 1
             elif end+1+join_gap < elist[y][0]:
-                nlist.append((elist[x][0], end))
+                if end-elist[x][0]>effect_len:
+                    nlist.append((elist[x][0], end))
                 x, end, y = y, elist[y][1], y+1
         nlist.append((elist[x][0], end))
+        #print('merge region',a,'          ')
     return nlist
 
 
@@ -353,6 +360,49 @@ def cross_insert(elist,slist):
         y = slist[n]
     return nlist
 
+def onechip(s,group,c,e):
+    #depth*c=(c+r-2*e))*r
+    cr=group/(s+c-2*e)
+    n=2*s+c-2*e
+    ss= []
+    aa=min(s-1,s+c-2*e)
+    bb=max(s-1,s+c-2*e)
+    cc=2*s+c-2*e
+    top=aa+1
+    for x in range(n):
+        if x<= aa:
+            ss.append((x+1)*cr)
+        elif x<=bb:
+            ss.append((top)*cr)
+        elif x<=cc:
+            ss.append((n-x)*cr)
+    midsum=sum(ss[s-e:e-s])
+    distances=[(0,0)]
+    for x in range(1,(s-e+c)//c):
+        ds=[0,]+ss[:x*c-1]
+        dsum=sum(ds)
+        for z,y in enumerate(ss[x*c-1:s-e]):
+            v=ds.pop(0)
+            ds.append(y)
+            dsum+=y-v  
+            if dsum>=midsum:
+                if z:
+                    distances.append((s-e-z+c,s-e-z+c-c*x))
+                break
+        if z==0:
+            dsum=0
+            for z,y in enumerate(ds):
+                dsum+=y
+                if dsum>=midsum:
+                    print(x)
+                    distances.append((s-e-z+c+c*x,s-e-z+c))
+                    break
+            break
+        elif dsum<midsum:
+            print(x)
+            distances.append((c*x,0))
+    print(distances)
+    return ss,midsum,distances
 
 
 def in_range(plist, clist):
@@ -491,16 +541,35 @@ def log_file(func):
         print('output file: %s' % args[1])
         return func(*args, **kw)
     return wrapper
-
+def segfile(file):
+    dicts={}
+    summ=0
+    flag=0
+    avg=0
+    with open(file,'r')as f:
+        for line in f.readlines():
+            if re.match('#',line):
+                flag=1
+                continue
+            if flag:
+                a,b=line.split()
+                a=int(a)
+                b=int(b)
+                dicts[a]=b
+                summ+=b
+                avg+=b*a
+    avg=round(avg/summ)
+    print('down. segfile',file)
+    return dicts,summ,avg
 
 modes = Enum('mode', ('WES', 'WGS'))
 pairs = Enum('pair', ('SE', 'PE', ))
 mutation_ways = (Enum('mutation_way', ('table', 'formula', 'auto')))
 qphs = Enum('qph', ('sanger', 'soleax', ))
 conf = configparser.ConfigParser()
-conf.read('profile1.ini')
-CHIP_LEN, JOIN_GAP, E_LEN, FLANK_LEN = get_value(
-    conf, 'chip', int, "CHIP_LEN", "JOIN_GAP", "E_LEN", "FLANK_LEN")
+conf.read('profile.ini')
+CHIP_LEN, E_LEN, FLANK_LEN = get_value(
+    conf, 'chip', int, "CHIP_LEN","E_LEN", "FLANK_LEN")
 ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
     conf, "error", float,  "ERROR_E", "ERROR_D", "SUBSTITUTION", "INSERTION", "DELETION")
 ERROR = conf.getboolean("error", "ERROR")
@@ -513,11 +582,13 @@ CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS = get_value(
 COLUMN, MEMORY, = get_value(conf, 'file', int, "COLUMN", "MEMORY")
 SEGMENT_E = conf.getint("segment", "SEGMENT_E")
 SEGMENT_D = conf.getfloat("segment", "SEGMENT_D")
+SEG=conf.get("segment","SEG")
 REFERENCES = 'REFERENCES='+REFERENCES
 REGIONS = 'REGIONS='+REGIONS
 MUTATIONS = 'MUTATIONS='+MUTATIONS
-if FLANK_LEN<SEGMENT_E-E_LEN:
-    FLANK_LEN=SEGMENT_E
+#if FLANK_LEN<SEGMENT_E-E_LEN:
+#    FLANK_LEN=SEGMENT_E
+JOIN_GAP=0
 exec(REFERENCES)
 exec(REGIONS)
 exec(MUTATIONS)

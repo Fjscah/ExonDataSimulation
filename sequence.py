@@ -2,6 +2,9 @@ import collections
 import json
 import os
 import re
+
+import matplotlib.pyplot as plt
+
 from basic import *
 
 
@@ -216,36 +219,36 @@ class Sequence(Region):
     def get_fasta(self, column):
         return [self.self_fasta_head]+get_words_text(self.seq, column)
  
-    def wes_segment(self, readlen, chip_len=CHIP_LEN, insert_e=SEGMENT_E, insert_d=SEGMENT_D):
+    def wes_segment(self, e_len=E_LEN, chip_len=CHIP_LEN, insert_e=SEGMENT_E, insert_d=SEGMENT_D):
         ''' get one inser's 2 reads'''
         # chip pos on exon
         length = self.mid_length
         flank_len = self._flank_len
         step = length//chip_len
         cbp = random.randint(0, step)*chip_len
-        while(True):
-            # insertion length
+        # insertion length
+        if insert_d:
             insertion = round(random.normalvariate(insert_e, insert_d))
-            if insertion < readlen:
-                continue
-            # chip pos on inseriton
-            sbp = random.randint(0, insertion-chip_len)
-            # insertion pos on exon
-            lbp = flank_len+cbp-sbp
-            if lbp < 0:
-                insertion = lbp+insertion
-                lbp = 0
-            rbp = lbp+insertion
-            if rbp > length+2*flank_len:
-                insertion = length+2*flank_len-rbp+insertion
-                rbp = length+2*flank_len
-            if ERROR:
-                num=round(ERROR_E*insertion)
-                extra=self._seq[rbp:rbp+num]
-            else :
-                extra=''
-            if insertion >= readlen:
-                break
+        else:
+            insertion = round(insert_e)
+        # chip pos on inseriton
+        if insertion<=e_len:
+            return '',''
+        sbp = random.randint(0, insertion-e_len)
+        # insertion pos on exon
+        lbp = flank_len+cbp-sbp
+        if lbp < 0:
+            insertion = lbp+insertion
+            lbp = 0
+        rbp = lbp+insertion
+        if rbp > length+2*flank_len:
+            insertion = length+2*flank_len-rbp+insertion
+            rbp = length+2*flank_len
+        if ERROR:
+            num=round(ERROR_E*insertion)
+            extra=self._seq[rbp:rbp+num]
+        else :
+            extra=''
         return self._seq[lbp:rbp],extra
 
     def get_part_seq(self, pos1=None, pos2=None, relative=True):
@@ -381,14 +384,13 @@ class Fasta(object):
         '''
         reffile=ref[0]
         expression = FNA[ref[1]]
-        print(re.match(expression,'>NC00'))
         print("initing reference sequence from %s..." % reffile)
         chrr = 1
         with open(reffile, 'r') as filed:
             with open(inifile, 'w', newline='\n') as writed:
                 line = get_line_text(filed, expression, 0, 're')
                 while(line):
-                    print(line.strip()[0:40], end="\r")
+                    print(line.strip()[0:40])
                     seqs, line, length = Fasta.get_before_seq(filed)
                     chromosome = Sequence(
                         chrr, 1, length, 'CH%s.%s' % (n, chrr))
@@ -534,7 +536,7 @@ class Bed(object):
                         if echr!=chrr:
                             echr=chrr
                             keys.add(chrr)
-                            print(line[:30],end='\r')
+                            print(line[:30])
                         writed.write(str(chrr)+'\t'+m.group(2)+'\t'+m.group(3)+'\n')
         keys=list(keys)
         keys.sort()
@@ -578,27 +580,33 @@ class Bed(object):
         return keys
 
     @staticmethod
-    def sort_reg(file, sortreg, chrrs=[]):
+    def sort_reg(file, sortreg, chrrs=[],effect_len=E_LEN,chip_len=CHIP_LEN,join_gap=JOIN_GAP):
         '''
         sort aimed bed from filtrated regions
         '''
+        print('sort reg file',file)
         if not chrrs:
-            chrrs = Bed.get_bed_info(sortreg)
+            chrrs = Bed.get_bed_info(file)
         #!!!!!
         with open(sortreg, 'w', newline='\n') as writed:
             pass
         for x in chrrs:
-            print('sorting chromosome %s ' % x, end='\r')
+            print('sorting chromosome %s ' % x)
             ranges = Bed.get_ranges(file, x)
-            if isinstance(JOIN_GAP, int):  # if need merge
-                ranges = merge_ranges(ranges, JOIN_GAP)
+            ranges = merge_ranges(ranges, join_gap,effect_len)
+            for i,y in enumerate(ranges):
+                if y[1]-y[0] < chip_len:
+                    s=(chip_len-y[1]+y[0]+1)//2
+                    a=y[0]-s
+                    b=y[1]+s
+                    ranges[i]=(a,b)
+            ranges = merge_ranges(ranges, join_gap,effect_len)
             with open(sortreg, 'a', newline='\n') as writed:
                 for y in ranges:
-                    if y[1]-y[0] > E_LEN:  # filtrate too shor region
-                        s = '\t'.join([str(x), str(y[0]), str(y[1])])+'\n'
-                        writed.write(s)
-                    else:
-                        print("region's length %s is too short -> ignore it"% (y[1]-y[0]))
+                    s = '\t'.join([str(x), str(y[0]), str(y[1])])+'\n'
+                    writed.write(s)
+        print('down. outfile :',sortreg)
+
 
     @staticmethod
     def get_ranges(file, chrr):
@@ -634,58 +642,276 @@ class Quality(object):
     def ini_qph(file, inifile):
         print('getting phred frequencies')
         frequencies = {}
-        readlen = get_column_row(file, r'+', 1, '==')
-        for x in range(1, readlen+1):
-            frequencies['pos%d_frequencies' % x] = {}
+        readlens={}
         with open(file, 'r') as f:
             i = 0
             line = f.readline()
+            while(True and line):
+                if re.match('^@',line):
+                    break
+                line=f.readline()
             while(line):
                 i += 1
                 if i % 4 == 0:
                     row_fastq = line.strip()
-                    x = 1
-                    for char in row_fastq:
-                        if char in frequencies['pos%d_frequencies' % x]:
-                            frequencies['pos%d_frequencies' % x][char] += 1
+                    l=len(row_fastq)
+                    if l in readlens:
+                        readlens[l]+=1
+                    else:
+                        readlens[l]=1
+                    for n,char in enumerate(row_fastq,1):
+                        if ('pos%d_frequencies' % n) in frequencies:
+                            if  char in frequencies['pos%d_frequencies' % n]:
+                                frequencies['pos%d_frequencies' % n][char] += 1
+                            else:
+                                frequencies['pos%d_frequencies' % n][char] = 1
                         else:
-                            frequencies['pos%d_frequencies' % x][char] = 1
-                        x = x+1
+                            frequencies['pos%d_frequencies' % n]={}
+                            frequencies['pos%d_frequencies' % n][char] = 1
                 if i % 40000 == 0:
                     print(i, end='\r')
                 if i > SEED:
                     break
                 line = f.readline()
+        sums=[]
+        for x in range(len(frequencies)):
+            sums.append(sum(frequencies['pos%d_frequencies' % (x+1)].values()))
         with open(inifile, "w") as f:
-            json.dump(frequencies, f)
+            json.dump([frequencies,sums,readlens], f)
+            #json.dump(frequencies, f)
     '''after ini'''
     @staticmethod
     def get_qph(file):
         print('initial qphred from %s...' % file, end='')
         asc = 64
         with open(file, "r") as filed:
-            frequencies = json.load(filed)
+            frequencies,sums,readlens = json.load(filed)
         for x in frequencies['pos1_frequencies'].keys():
             if x in '1234456789+-*':
                 asc = 33
                 break
         print('down.')
-        return frequencies, asc
-
+        return frequencies, sums,readlens,asc
     @staticmethod
-    def get_qphred_reads(frequencies, num):
+    def get_avg_readlens(readlens):
+        summ=0
+        for x,y in readlens.items():
+            summ+=int(x)*int(y)
+        return round(summ/sum(readlens.values()))
+    @staticmethod
+    def get_qphred_reads(frequencies,sums,readlens, num):
         qphreds = []
-        summ = sum(frequencies['pos1_frequencies'].values())
-        l = len(frequencies)
+        summ=sum(readlens.values())
         for n in range(num):
             s = ''
+            l=int(random_weight_choice(readlens,summ))
             for x in range(1, l+1):
                 char = random_weight_choice(
-                    frequencies['pos%d_frequencies' % x], summ)
+                    frequencies['pos%d_frequencies' % x], sums[x-1])
                 s = s+char
             qphreds.append(s)
         return qphreds
 
+class Depth(object):
+    @staticmethod
+    def re_group(file,depth,segment=SEGMENT_E,chip_len=CHIP_LEN):
+        f=open(file , 'r',newline='\n')
+        sreg=[]
+        maxs=[]
+        x=1
+        line=f.readline()
+        while(line):
+            chrr,b,dep=line.strip().split()
+            chrr=chrr.split('.')[-1]
+            b,dep=int(b),int(dep)
+            sreg.append(dep)
+            if x>10000000:
+                break
+            if x%100==0:
+                maxs.append(max(sreg))
+                sreg=[]
+            line=f.readline()
+            x+=1
+        f.close()
+        maxs.sort(reverse=True)
+        dmax=[]
+        for x in maxs:
+            if x-depth>-depth//2 and x-depth<depth:
+                dmax.append(x)
+        depth=sum(dmax)/len(dmax) 
+        maxs=[]
+        dmax=[]
+        group=depth*chip_len/segment
+        print('depth=',depth,'group=',group)
+        return group
+    @staticmethod
+    def zero_dep(file,write):
+        x=1
+        print('zero file from',file)
+        #write zero
+        echr=0
+        tempwrite=write[:-3]
+        if not os.path.exists(write):
+            f=open(file , 'r',newline='\n')
+            w=open(tempwrite , 'w',newline='\n')
+            line=f.readline()
+            while(line):
+                chrr,b,dep=line.strip().split()
+                chrr=chrr.split('.')[-1]
+                if echr!=chrr:
+                    print('zero chromosome',chrr,'...')
+                    echr=chrr
+                    x=1
+                b,dep=int(b),int(dep)
+                while(x<b):
+                    sting='\t'.join([chrr,str(x),'0'])
+                    w.write(sting+'\n')
+                    x+=1
+                string='\t'.join([chrr,str(x),str(dep)])
+                w.write(string+'\n')
+                line=f.readline()
+                x+=1
+
+            f.close()
+            w.close()
+            print('dowm. outfile',write)
+            os.rename(tempwrite,write)
+    @staticmethod
+    def dep2bed(file,depth,segment=SEGMENT_E,chip_len=CHIP_LEN,effect_len=E_LEN):
+        '''
+        it use method -- chip length's total depth to identify sequence regions
+        '''
+        #file ='reference.depth'
+        write2=CD+file.split('/')[-1]+'.bed'
+        group=Depth.re_group(file,depth,segment,chip_len)
+        def search_dis(distances,dis,bsum):
+            if dis>=distances[-1][0]:
+                cc=distances[-1][1]
+                v=len(distances)
+                ahead=bsum//(v*chip_len)
+                return max(round(cc-ahead),0)
+            for v,k in enumerate(distances):
+                if k[0]>dis:
+                    break
+            cc=distances[v-1][1] 
+            if v>1:   
+                ahead=bsum//(v*chip_len-chip_len)
+            else:
+                ahead=0
+            return max(round(cc-ahead),0)
+        echr=0
+        #one depth need legnth =l=a
+        #total bases= l//c*r*r
+        #one catch length =l//c*r=b
+        #ax=by->y=ax/b
+        n=2*segment+chip_len-2*effect_len
+        origins,midsum,distances=onechip(segment,group,chip_len,effect_len)
+        midlsum=midsum//2
+        print('midsum=',midsum,'midltsum=',midsum,'origin',origins[0])
+        origins=origins[:5]
+        #print('chiplen',len(origins[s-e:e-s]))
+        f=open(file , 'r',newline='\n')
+        w=open(write2 , 'w',newline='\n')
+        ts=[0,]*chip_len
+        tsum=sum(ts)
+        i=0
+        flag=False
+        exonranges=[]
+        direction=0
+        bsum=0
+        t=0
+        regsums=[]
+        line=f.readline()
+        while(line):
+            i+=1
+            chrr,b,d=line.strip().split()
+            chrr=chrr.split('.')[-1]
+            if chrr!=echr:
+                print('repositon chromsome',chrr,'...')
+                echr=chrr
+                flag=False
+                i=1
+            b,d=int(b),int(d)
+            if b-i>=chip_len and not flag:
+                # mid zero
+                i=b
+                ts=[0,]*chip_len
+                tsum=0
+            elif b-i>=chip_len and flag:
+                t=i
+                i=b
+                ts=[0,]*chip_len
+                tsum=0
+            while(i<=b):
+                if i==b:
+                    v=ts.pop(0)
+                    ts.append(d)
+                    tsum=tsum-v+d
+                    direction=direction-v+d
+                else:
+                    v=ts.pop(0)
+                    ts.append(0)
+                    tsum=tsum-v+0
+                    direction=direction-v+d
+                if exonranges and exonranges[0][1]<b-segment+effect_len-chip_len:
+                    exonranges.pop(0)
+                if i%chip_len==0:
+                    esum=0
+                    for x,y in exonranges:
+                        start=b-chip_len-segment+effect_len
+                        x=max(round(x-start),0)
+                        if x>=5:
+                            break
+                        y=min(round(y-start),5)
+                        esum+=sum(origins[x:y])
+                    if flag:
+                        if direction<=0 and direction+esum+midlsum<0 or tsum <= midsum or t:
+                            if t:
+                                print('bt=',t)
+                                b=t
+                                mm=tsum
+                                tsum=0
+                            # reduce too rapid or reads too little
+                            if direction+esum+midsum<0:
+                                ee=b-chip_len
+                            else:
+                                ee=b-chip_len//2
+                            cc=search_dis(distances,ee-bb,bsum)
+                            if not cc and bb-ee<=2*chip_len and tsum <= midsum:
+                                # region too small and region's reads too little
+                                flag=False
+                            elif bb+cc>=ee:
+                                print('error',ee-bb,cc)
+                                flag=False
+                            elif regsums and tsum>=min(regsums[(cc//chip_len):])+esum and tsum:
+                                # if reduce too rapid but reads still hign
+                                regsums.append(tsum)
+                            else:
+                                string='\t'.join([chrr,str(bb+cc),str(ee)])
+                                w.write(string+'\n')
+                                flag=False
+                                exonranges.append((bb+cc,ee))
+                            if t:
+                                print('et=',t)
+                                t=0
+                                tsum=mm
+                        else:
+                            regsums.append(tsum)
+                    elif tsum >= midsum and ts[0]>=origins[0]:
+                        # reads enough and left point not zero
+                        flag=True
+                        bsum=tsum-midsum
+                        regsums=[tsum]
+                        bb=b-chip_len
+                    direction=0
+                i+=1
+            i-=1
+            line=f.readline()
+        f.close()
+        w.close()
+        write3=CD+file.split('/')[-1]+'.sortbed'
+        Bed.sort_reg(write2,write3,join_gap=3*chip_len)
+        print('down. outfile',write2,write3)
 
 def get_chr_bed_num(file):
     with open(file, 'r') as f:
@@ -710,9 +936,89 @@ def show_chr_bed_num(bed_nums):
         print('%s=%d' % (key, bed_nums[key]), end='\t')
     print('')
 
+def view_depth(depfile,reg):
+    help='''
+    -d <x> <pos> <pos> :show depth,out png
+    '''
+    line = input('>>')
+    while(line.strip() != 'exit'):
+        line = line.split()
+        if '-help' in line:
+            print(help)
+        elif '-d' in line and len(line)>=4:
+            chrr,begin,end=str2int(line[1:4])
+            if '-t' in line:
+                mark=1
+            else:
+                mark=0
+            xs=[v for v in range(begin,end+1)]
+            ys=[0,]*(end-begin+1)
+            f1=open(depfile,'r',newline='\n')
+            for ss in f1.readlines():
+                if re.match('.*.%s\t'%chrr,ss):
+                    idd,pos,depth=str2int(ss.split())
+                    if pos>end:
+                        break
+                    elif pos>=begin and pos<=end:
+                        ys[pos-begin]=depth
+            f1.close()
+            lengtht=max((begin-end)//10000,20)
+            print('lengtht',lengtht)
+            plt.figure(figsize=(lengtht,5))
+            plt.style.use('seaborn-white')
+            plt.ylabel('depth')
+            plt.title('the depth between %s and %s on chromosome %s' %(begin,end,chrr))
+            plt.xlim(begin,end)
+            if ys:
+                top=max(ys)
+            else:
+                top=0
+            zs=[0,]*(end-begin+1)
+            ws=[]
+            ranges=Bed.get_ranges(reg,chrr)
+            for x in ranges:
+                if x[0]> end:
+                    break
+                if x[0]>=begin:
+                    zs[x[0]-begin]=top
+                    ws.append(x[0]-begin)
+                    if x[1]<=end:
+                        for y in range(x[1]-x[0]):
+                            zs[x[0]-begin+y+1]=top
+                            ws.append(x[0]-begin+y+1)
+                    else:
+                        for y in range(end-x[0]):
+                            zs[x[0]-begin+y+1]=top
+                            ws.append(x[0]-begin+y+1)
+                        break
+            esum=0
+            for x in ws:
+                esum+=ys[x]
+            if esum:
+                esum=esum/len(ws)
+            asum=sum(ys)
+            asum=asum/(end-begin+1)
+            print('exon degth=',esum,'region depth=',asum)
+            plt.fill_between(xs,ys,color='pink',alpha=0.8)
+            if mark:
+                plt.fill_between(xs,zs,alpha=0.6,facecolor='lightblue')
+            #plt.plot(xs,ys,color='grey',linewidth=0.8,alpha=1)
+            #plt.plot(xs,ys,color='red',alpha=0.4)
+            depfilet=depfile.split('/')[-1]
+            regt=reg.split('/')[-1]
+            if mark:
+                plt.savefig('%s-%s-chr%s-%s-%s.png' %(begin,end,chrr,depfilet,regt),bbox_inches='tight')
+                print('outfile','%s-%s-chr%s-%s-%s.png' %(begin,end,chrr,depfilet,regt))
+            else:
+                plt.savefig('f%s-%s-chr%s-%s.png' %(begin,end,chrr,depfilet),bbox_inches='tight')
+                print('outfile','f%s-%s-chr%s-%s-%s.png' %(begin,end,chrr,depfilet,regt))
+        else:
+            print('cannot idendify instruction' )  
+        line = input('>>')    
 
+        
 
-def view(file):
+def view_seq(file):
     helps = '''
     file need be reference file
     -p <x> <pos1> <pos2>            : show chx from pos1 to pos2 sequence
@@ -721,28 +1027,48 @@ def view(file):
     infos=Fasta.fasta_file_info(file)
     column = infos['column']
     step = infos['step']
-    print(helps)
-    #bed_nums = get_chr_bed_num(file)
     with open(file, 'r') as filed:
-        line = input('>')
+        line = input('>>')
         while(line.strip() != 'exit'):
             line = line.split()
             if '-help' in line:
                 print(helps)
-            elif '-p' in line and len(line)>=4:
+            elif '-p' in line and len(line)>=4:   
                 chrr,begin,end=str2int(line[1:4])
-                length=end-begin+1
                 pos=Fasta.analyse_infos(infos,chrr)[1]
-                texts=''.join(get_words(filed, begin, length, MEMORY, column, step,pos=pos))
+                texts=''.join(get_words(filed, pos, end-begin+1, MEMORY, column, step,pos=pos))
                 texts=tidy_small_word(texts,100)
                 for text in texts:
                     print(text,end='')
                 print()
             else:
                 print('cannot idendify instruction' )
-            line = input('>')
+                break
+            line = input('>>')
+def view():
+    helps = '''
+    file need be reference file
+    -p reffile            : show chx from pos1 to pos2 sequence
+    -d depfile regfile
+    -help
+    '''
+    print(helps)
+    line = input('>')
+    while(line.strip() != 'exit'):
+        line = line.split()
+        if '-help' in line:
+            print(helps)
+        elif '-p' in line and len(line)>=2:
+            file=line[1]
+            view_seq(file)
+        elif '-d' in line and len(line)>=3:
+            depfile,regfile=line[1:3]
+            view_depth(depfile,regfile)
+        else:
+            print('cannot idendify instruction' )
+        line = input('>')
 
 
 if __name__ == '__main__':
     file = input("please enter bedlist file you want to look for : ")
-    view(file)
+    view()

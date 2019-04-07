@@ -91,13 +91,53 @@ def check_segment(segment):
             l.append(random.choice(ATCG[:4]))
             #raise Exception("error :can't indentify", char)
     return l
-def wgsout(content, readlen, quality, reffile):
-    frequencies, asc = Quality.get_qph(quality)
+
+
+
+def wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d):
+    stop = chromosome.end
+    begin = random.randint(1, stop-segment_e)
+    if segment_d:
+        end = round(begin+random.normalvariate(segment_e, segment_d))
+    else:
+        end = round(begin+segment_e)
+    if end > stop:
+        end = stop
+    length = end-begin+1
+    segment = ''.join(get_words(filed, begin, length,
+                                MEMORY, column, step, pos))       
+    return segment
+
+
+
+def motify_segment(segment,extra,effect_len):
+    l=len(segment)
+    segment=check_segment(segment)#segment is list
+    extra=check_segment(extra)
+    if ERROR:
+        segment = add_segment_err(segment)#list
+    if len(segment)<l:
+        segment+=extra[:l-len(segment)]
+    if len(segment)<effect_len:
+        print('segment is too short -> ignore it')
+        return ''
+    else:
+        return ''.join(segment)
+def wgsout(content,  quality, reffile,*R):
+    frequencies,sums,readlens, asc = Quality.get_qph(quality)
+    readlen=Quality.get_avg_readlens(readlens)
     if pairs.PE.value == PAIR:
+        R1=R[0]
+        R2=R[1]
         r1 = open(R1, 'w', newline='\n')
         r2 = open(R2, 'w', newline='\n')
     elif PAIR == pairs.SE.value:
+        R0=R[0]
         r0 = open(R0, 'w', newline='\n')
+    if os.path.exists(SEG):
+        segs,summ=segfile(SEG)[:2]
+    segment_e=SEGMENT_E
+    segment_d=SEGMENT_D
     infos = Fasta.fasta_file_info(reffile)
     column = infos['column']
     step = infos['step']
@@ -109,83 +149,68 @@ def wgsout(content, readlen, quality, reffile):
         with open(reffile, 'r', newline='\n') as filed:
             for y in range(turns):
                 if y%10000==0:
-                    qphreds = Quality.get_qphred_reads(frequencies, 100)
+                    qphreds = Quality.get_qphred_reads(frequencies,sums,readlens,100)
                     print(y//10000)
-                segment = wgs_segment(filed, readlen, chromosome, pos, column, step)
-                segment=motify_segment(segment,'',readlen)#segment is list
+                if os.path.exists(SEG):
+                    segment_e=random_weight_choice(segs,summ)
+                    segment_d=0
+                segment = wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d)
+                segment=motify_segment(segment,'',E_LEN)#segment is list
                 if not segment:
                     continue
                 head = chromosome.id+'.'+str(y+1)
                 if pairs.PE.value == PAIR:
-                    write_fastq(segment, head, qphreds, readlen, asc, r1, r2)
+                    write_fastq(segment, head, qphreds, asc, r1, r2)
                 else:
-                    write_fastq(segment, head, qphreds, readlen,asc, r0)
+                    write_fastq(segment, head, qphreds, asc, r0)
     if pairs.PE.value == PAIR:
         r1.close()
         r2.close()
     elif PAIR == pairs.SE.value:
         r0.close()
     print(' down.')
-
-
-def wgs_segment(filed, readlen, chromosome, pos, column, step):
-    stop = chromosome.end
-    tail = max(SEGMENT_E, readlen)
-    begin = random.randint(1, stop-tail)
-    end = round(begin+random.normalvariate(SEGMENT_E, SEGMENT_D))
-    if end > stop:
-        end = stop
-    length = end-begin+1
-    if length < readlen:
-        begin = begin-readlen+length
-        length = readlen
-    segment = ''.join(get_words(filed, begin, length,
-                                MEMORY, column, step, pos))       
-    return segment
-
-
-
-def motify_segment(segment,extra,readlen):
-    l=len(segment)
-    segment=check_segment(segment)#segment is list
-    extra=check_segment(extra)
-    if ERROR:
-        segment = add_segment_err(segment)#list
-    if len(segment)<l:
-        segment+=extra[:l-len(segment)]
-    if len(segment)<readlen:
-        print('segment is too short -> ignore it')
-        return ''
-    else:
-        return ''.join(segment)
-def wesout(content, readlen, quality, seqfile):
-
-    frequencies, asc = Quality.get_qph(quality)
+def wesout(content, quality,seqfile,*R):
+    frequencies,sums,readlens, asc = Quality.get_qph(quality)
+    readlen=Quality.get_avg_readlens(readlens)
     if pairs.PE.value == PAIR:
+        R1=R[0]
+        R2=R[1]
         r1 = open(R1, 'w', newline='\n')
         r2 = open(R2, 'w', newline='\n')
     elif PAIR == pairs.SE.value:
+        R0=R[0]
         r0 = open(R0, 'w', newline='\n')
+    if os.path.exists(SEG):
+        print('get segment length from file :',SEG)
+        segs,summ=segfile(SEG)[:2]
     sequence = Fasta.iterator_fasta(seqfile)
+    segment_e=SEGMENT_E
+    segment_d=SEGMENT_D
+    echr=0
     for x in sequence:
         length = x.seq_length
-        qphreds = Quality.get_qphred_reads(frequencies, 10+length//100)
+        qphreds = Quality.get_qphred_reads(frequencies,sums,readlens, 10+length//100)
         turns = round(DEPTH*x.mid_length/readlen *
                         content/len(REFERENCES)/PAIR)
-        if length < readlen:
+        if length < E_LEN:
             print('\tseq length %s too short -> not ouput '%length)
             print(x.get_fasta_head(),'\n',x.seq)
             continue
-        print('\twriting exon : %s' % x.id, end='\r')
+        if echr!=x.chr:
+            print('\twriting exon : %s' % x.id, end='\r')
+            echr=x.chr
         for y in range(turns):
+            if os.path.exists(SEG):
+                segment_e=random_weight_choice(segs,summ)
+                segment_d=0
             segment,extra = x.wes_segment(
-                    readlen, CHIP_LEN, SEGMENT_E, SEGMENT_D)
-            segment=motify_segment(segment,extra,readlen)
+                    E_LEN, CHIP_LEN, segment_e, segment_d)
+            segment=motify_segment(segment,extra,E_LEN)
             if not segment:
                 continue
             head = x.id+'.'+str(y+1)#segment is str
             if pairs.PE.value == PAIR:
-                write_fastq(segment, head, qphreds, readlen, asc, r1, r2)
+                write_fastq(segment, head, qphreds, asc, r1, r2)
             else:
                 write_fastq(segment, head, qphreds, asc, r0)
     if pairs.PE.value == PAIR:
@@ -196,13 +221,23 @@ def wesout(content, readlen, quality, seqfile):
     print(' down.')
 
 
-def write_fastq(segment, head, qphreds, readlen, asc, *R):
+def write_fastq(segment, head, qphreds,  asc, *R):
     if pairs.PE.value == PAIR:
-        read1 = segment[:readlen]
-        read2 = segment[-1:-1-readlen:-1]
-        read2 = read_complement(read2)
         qphred1 = random.choice(qphreds)
         qphred2 = random.choice(qphreds)
+        l1=len(qphred1)
+        l2=len(qphred2)
+        read1 = segment[:l1]
+        read2 = segment[-1:-1-l2:-1]
+        read2 = read_complement(read2)
+        s=l1-len(read1)
+        if s:
+            e=random.randint(0,s)
+            qphred1=qphred1[e:e+len(read1)]
+        s=l2-len(read2)
+        if s:
+            e=random.randint(0,s)
+            qphred2=qphred2[e:e+len(read2)]
         if MISMATCH:
             read1 = add_read_err(read1, qphred1, asc)
             read2 = add_read_err(read2, qphred2, asc)
@@ -213,8 +248,13 @@ def write_fastq(segment, head, qphreds, readlen, asc, *R):
             R[0].write('@'+head+'\t1:Y:0:\n'+read2+'\n+\n'+qphred2+'\n')
             R[1].write('@'+head+'\t2:Y:0:\n'+read1+'\n+\n'+qphred1+'\n')
     else:
-        read = segment[:readlen]
         qphred = random.choice(qphreds)
+        l=len(qphred)
+        read = segment[:l]
+        s=l-len(read)
+        if s:
+            e=random.randint(0,s)
+            qphred=qphred[e:e+len(read)]
         if MISMATCH:
             read = add_read_err(read, qphred, asc)
         R[0].write('@'+head+'\n'+read+'\n+\n'+qphred+'\n')
@@ -276,13 +316,9 @@ def write_ref_muta(ref, inimuta, refmuta, nid):
     print('down. outfile : ', refmuta)
 
 
-def readout(refs, regs, qph, inimutation, mut):
-    frequencies, acs = Quality.get_qph(qph)
-    readlen = len(frequencies)
-    if SEGMENT_E<=readlen:
-        print('segment is not much longger than readlen')
-        return
-    frequencies = {}
+def readout(refs, regs, qph, inimutation, mut,*R):
+    if os.path.exists(SEG):
+        pass
     for ref, reg in zip(refs, regs):
         # haplotype + mutu - > mute reg
         regfile = reg+'.reg'+str(mut[0])
@@ -297,11 +333,11 @@ def readout(refs, regs, qph, inimutation, mut):
             seqfile = reg+'.exome'+str(mut[0])
             tt=seqfile+'.temp'
             if not os.path.exists(seqfile):
-                Fasta.ini_exome(tempref, regfile, tt,readlen)
+                Fasta.ini_exome(tempref, regfile, tt)
                 os.rename(tt,seqfile)
-            wesout(mut[1], readlen, qph, seqfile)
+            wesout(mut[1],  qph, seqfile,*R)
             os.remove(tempref)
             os.remove(seqfile)
         elif MODE == modes.WGS.value:
-            wgsout(mut[1], readlen, qph, tempref)
+            wgsout(mut[1], qph, tempref,*R)
             os.remove(tempref)

@@ -2,7 +2,7 @@ from copy import deepcopy
 from functools import reduce
 from basic import *
 from sequence import *
-
+import sys
 
 class Indel(Line):
     def __init__(self, begin, end, alt):
@@ -362,7 +362,7 @@ class Haploid(object):
             print('normal haploid')
         else:
             print('mutation haploid')
-        for x in sorted(self.chromosomes.values(),key=lambda x:x.chr):
+        for x in sorted(self.chromosomes.values(),key=lambda y:int(y.chr)):
             x.show_chromosome()
 
     def neaten(self):
@@ -384,7 +384,7 @@ class Haploid(object):
                         y.write_fasta(writed, COLUMN)
                         y.del_seq()
         print('down. outfile :',outfile)
-    def write_muta_bed(self, reg, outfile):
+    def write_muta_bed(self, reg, outfile,effect_len=E_LEN,chip_len=CHIP_LEN):
         print('reposition from file :',reg)
         with open(outfile,'w',newline='\n')as f:
             pass
@@ -410,13 +410,16 @@ class Haploid(object):
                 ranges = differ_insert_ranges(ranges, sranges)
             ranges += sss
             if sss:
-                ranges = merge_ranges(ranges, JOIN_GAP)
+                ranges = merge_ranges(ranges, JOIN_GAP,effect_len)
+                for i,y in enumerate(ranges):
+                    if y[1]-y[0] < chip_len:
+                        s=(chip_len-y[1]+y[0]+1)//2
+                        a=y[0]-s
+                        b=y[1]+s
+                        ranges[i]=(a,b)
             with open(outfile, 'a', newline='\n') as filed:
                 for x in ranges:
-                    if x[1]-x[0]>E_LEN: # filtrate too shor region
-                        filed.write('%s\t%s\t%s\n' % (chrr, x[0], x[1]))
-                    else:
-                        print('region is too short -> ignore it')
+                    filed.write('%s\t%s\t%s\n' % (chrr, x[0], x[1]))
         print('down. outfile :',outfile)
             
 
@@ -487,3 +490,29 @@ def ini_muta(inireferences, iniregions, mut, inifile):
         Fasta.ini_exome(x, y, z)
     '''
 
+def vcf2formula(file):
+    formulafile=file+'formula'
+    with open(file,'r',newline='\n')as filed:
+        with open(formulafile,'w',newline='\n')as writed:
+            for line in filed.readlines():
+                if re.match('#',line):
+                    continue
+                infos=line.split()
+                chrr,pos,idd,ref,alt,qual,filt=infos[:7]
+                chrr=chrr.strip('chr')
+                end=int(pos)+len(ref.strip('.'))-1
+                alt=alt.strip('.')
+                if alt:
+                    alt='('+alt+')*1'
+                alt='('+alt+')'
+                tumor=infos[-1]
+                tumor=tumor.split(':')[0]
+                tumor=tumor.replace('1','*')
+                tumor=tumor.replace('0','.')
+                if '*' in tumor:
+                    s='\t'.join([tumor,chrr,pos,str(end),alt])
+                    writed.write(s+'\n')
+
+if __name__ == '__main__':
+    info = sys.argv
+    vcf2formula(info[1])

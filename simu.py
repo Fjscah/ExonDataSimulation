@@ -9,7 +9,7 @@ from basic import *
 from sequence import *
 from mutation import * 
 from read import *
-
+random.seed(100)
 
 if __name__ == '__main__':
     time_start = time.time()
@@ -20,8 +20,8 @@ if __name__ == '__main__':
     -qph          : get qphred frequencies from file,generate file3
     -read         : get aimed regions pe fastq from file1234 (deafault flitrate 'N')
     -seq          : get aimed sequence from file1,file2, generate filea
-    -fli          : flitrate 'N' sequence, generate fileb(=filea+'.fliter')
-    -view <file>  : view  sequence
+    -view         : view  sequence or depth
+    -dep <file> <depth>  : repositon regions from depth file
     -clear        : clear temp files
     optional:
     -wes/wgs      : set the way to generate DNA segment
@@ -52,7 +52,7 @@ if __name__ == '__main__':
     regions = set(REGIONS)  # filtrate the same region file
     inireferences = list(map(lambda x: CD+x[0].split('/')[-1].strip()+'.ini', references))
     iniregions = list(map(lambda x: CD+x[0].split('/')[-1].strip()+'.ini', regions))
-    iniexomes = list(map(lambda x: CD+x[0].split('/')[-1].strip()+'.exome', REFERENCES))
+    iniexomes = list(map(lambda x: CD+x[0].split('/')[-1].strip()+'.exome', REGIONS))
     inimutations = list(map(lambda x: CD+x[2].split('/')[-1].strip()+'.ini', MUTATIONS))
     stanfiles = list(map(lambda x: CD+x[0].split('/')[-1].strip()+'.temp', regions))
     iniquality = CD+QUALITY.split('/')[-1].strip()+'.ini'
@@ -67,7 +67,7 @@ if __name__ == '__main__':
     elif '-ref' in info:  # initialize reference genomes(single haploid)
         n = 1
         for x, y in zip(REFERENCES, inireferences):  # mark number
-            Fasta.ini_ref(x, y, n)
+            Fasta.ini_ref(x, y, n) 
             n += 1
     elif '-reg'in info:  # merge targed regions
         for x, y in zip(regions, iniregions):
@@ -75,12 +75,7 @@ if __name__ == '__main__':
     elif '-qph' in info:
         Quality.ini_qph(QUALITY, iniquality)
     elif '-seq' in info:  # initailize exome sequence from initialized regions
-        if os.path.exists(iniquality):
-            readlen=Quality.get_qph(iniquality)[1]
-            for x, y, z in zip(inireferences, iniregions, iniexomes):
-                Fasta.ini_exome(x, y, z,readlen)
-        else:
-            for x, y, z in zip(inireferences, iniregions, iniexomes):
+        for x, y, z in zip(inireferences, iniregions, iniexomes):
                 Fasta.ini_exome(x, y, z)
     elif '-mut' in info:  # initialize mutations
         for mut, y,  in zip(MUTATIONS, inimutations):
@@ -89,12 +84,25 @@ if __name__ == '__main__':
         if pairs.PE.value == PAIR:
             open(R1, 'w', newline='\n').close()
             open(R2, 'w', newline='\n').close()
+            for x, mut in zip(inimutations, MUTATIONS):
+                # polyoid 's id,content,mutationseq,inireferences,mutationsbed
+                # mutationsbed can get from iniregions+polys
+                readout(inireferences, iniregions, iniquality, x, mut,R1,R2)
         elif PAIR == pairs.SE.value:
             open(R0, 'w', newline='\n').close()
-        for x, mut in zip(inimutations, MUTATIONS):
-            # polyoid 's id,content,mutationseq,inireferences,mutationsbed
-            # mutationsbed can get from iniregions+polys
-            readout(inireferences, iniregions, iniquality, x, mut)
+            for x, mut in zip(inimutations, MUTATIONS):
+                # polyoid 's id,content,mutationseq,inireferences,mutationsbed
+                # mutationsbed can get from iniregions+polys
+                readout(inireferences, iniregions, iniquality, x, mut,R0)
+    elif '-dep' in info:
+        depfile=info[info.index('-dep')+1]
+        depth=int(info[info.index('-dep')+2])
+        segment_e=SEGMENT_E
+        if os.path.exists(SEG):
+            print('get segment length from file :',SEG)
+            segment_e=segfile(SEG)[2]
+        Depth.dep2bed(depfile,depth,segment_e)
+
     elif '-clear' in info:
         def clear(listt):
             for x in listt:
@@ -107,14 +115,12 @@ if __name__ == '__main__':
         clear(stanfiles)
         clear([iniquality,BED_INFO,FASTA_INFO])
         for x in os.listdir(CD):
-            if '.ini' in x:
+            if '.ini' in x[-4:]:
                 os .remove(CD+x)
-            elif '.temp' in x:
+            elif '.temp' in x[-4]:
                 os.remove(CD+x)
     elif '-view' in info:
-        if len(info) >= 3:
-            file = info[2]
-            view(file)
+        view()
 
 
     time_end = time.time()
