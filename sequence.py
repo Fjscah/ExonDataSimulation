@@ -219,7 +219,7 @@ class Sequence(Region):
     def get_fasta(self, column):
         return [self.self_fasta_head]+get_words_text(self.seq, column)
  
-    def wes_segment(self, e_len=E_LEN, chip_len=CHIP_LEN, insert_e=SEGMENT_E, insert_d=SEGMENT_D):
+    def wes_segment(self, e_len, chip_len, insert_e, insert_d,ERROR,error_e):
         ''' get one inser's 2 reads'''
         # chip pos on exon
         length = self.mid_length
@@ -245,7 +245,7 @@ class Sequence(Region):
             insertion = length+2*flank_len-rbp+insertion
             rbp = length+2*flank_len
         if ERROR:
-            num=round(ERROR_E*insertion)
+            num=round(error_e*insertion)
             extra=self._seq[rbp:rbp+num]
         else :
             extra=''
@@ -275,15 +275,17 @@ class Sequence(Region):
         else:
             print('|', self.get_part_seq(pos1, pos2, relative), '|')
 
-    def search_seq(self, filed, stop, chr_pos, column, row_step):
+    def search_seq(self, filed, stop, chr_pos, column, row_step,MEMORY):
         if self.end > stop:
             print('region out of reference gonome -> ignore it')
+            return False
         elif self.length > -1:
             self._flank_len = min(
                 self._flank_len, self._begin-1, stop-self._end)
             begin = self._begin-self._flank_len
             self._seq = ''.join(get_words(
                 filed, begin, self.all_length, MEMORY, column, row_step, pos=chr_pos))
+            return True
 
     def write_fasta(self, writed, column):
         writed.write("%s\t\n" % (self.get_fasta_head()))
@@ -296,9 +298,9 @@ class Sequence(Region):
         if ranges and ranges[0][1]-ranges[0][0]+1 < self.length:
             # if aimed sequence has N
             if not split:
-                print('aimed region has N -> ignore it')
+                print('aimed region has N -> ignore it',self._chr,self._begin,self._end,'            ')
             elif split:
-                print('aimed region has N -> split it')
+                print('aimed region has N -> split it',self._chr,self._begin,self._end,'            ')
                 i = 1
                 for x in range(len(ranges)):
                     begin = self.begin+ranges[x][0]
@@ -310,7 +312,7 @@ class Sequence(Region):
                     sequences.append(
                         Sequence(self.chr, begin, end, idd, 0, seqs[x]))
                     i += 1
-            print(self.mid)
+            print(self.mid[:500])
         elif ranges:
             # if aimed doesn't have N
             l = self.lflank.rfind('N')
@@ -339,7 +341,7 @@ class Sequence(Region):
 class Fasta(object):
     '''Fasta is a layout which includes head(>name)+body(sequence), not flank_len'''
     @staticmethod
-    def get_before_seq(filed):
+    def get_before_seq(filed,MEMORY):
         '''get fasta sequence body, l is whether to record length'''
         seqs = []
         s, l = [], MEMORY
@@ -377,7 +379,7 @@ class Fasta(object):
         return ''.join(seq), line
 
     @staticmethod
-    def ini_ref(ref, inifile, n):
+    def ini_ref(ref, inifile, n,FNA,COLUMN,MEMORY):
         '''
         get chromosomes sequence from one haploid, file must be in order
         otherwise chr x  may be rename other chr y
@@ -386,21 +388,23 @@ class Fasta(object):
         expression = FNA[ref[1]]
         print("initing reference sequence from %s..." % reffile)
         chrr = 1
-        with open(reffile, 'r') as filed:
+        with open(reffile, 'r',newline='\n') as filed:
             with open(inifile, 'w', newline='\n') as writed:
                 line = get_line_text(filed, expression, 0, 're')
                 while(line):
                     print(line.strip()[0:40])
-                    seqs, line, length = Fasta.get_before_seq(filed)
+                    seqs, line, length = Fasta.get_before_seq(filed,MEMORY)
                     chromosome = Sequence(
                         chrr, 1, length, 'CH%s.%s' % (n, chrr))
                     chrr += 1
+                    print(chromosome.get_fasta_head())
                     writed.write("%s\n" % (chromosome.get_fasta_head()))
                     write_big_words(writed, seqs, COLUMN, 0)
                     writed.write('\n')
                     if equal_text(line, expression, 're'):
                         continue
                     else:
+                        #print('black line')
                         line = get_line_text(filed, expression, 0, 're')
         print('down. outfile: %s  ' % inifile)
 
@@ -419,13 +423,13 @@ class Fasta(object):
                     line = filed.readline()
 
     @staticmethod
-    def ini_exome(iniref, inireg, iniexome,effect_len=E_LEN):
+    def ini_exome(iniref, inireg, iniexome,effect_len,flank_len,FLI_N,INNER_N,COLUMN,MEMORY,FASTA_INFO):
         '''get aimed sequence from chromosome sequence and bed'''
-        print("getting exome from : %s , %s" % (iniref, inireg))
+        print("getting exome from : %s , %s" % (iniref, inireg)) 
         with open(inireg, 'r') as filed2:
-            sequences = Bed.iterator_sequences(filed2)
+            sequences = Bed.iterator_sequences(filed2,flank_len)
             try:
-                Fasta.ini_exons(iniref, iniexome, sequences,effect_len)
+                Fasta.ini_exons(iniref, iniexome, sequences,effect_len,FLI_N,INNER_N,COLUMN,MEMORY,FASTA_INFO)
             except StopIteration:
                 print('\tstop.', end='')
         print('down. outfile: %s ' % iniexome)
@@ -448,9 +452,26 @@ class Fasta(object):
         chrrs.sort()
         return chrrs
     @staticmethod
-    def fasta_file_info(file, *info):
+    def remove_fastainfo(FASTA_INFO,file):
         log = FASTA_INFO
-        print('get fasta info from :', file, end='...')
+        if not os.path.exists(log):
+            open(log, 'a').close()
+        with open(log, 'r') as filed:
+            try:
+                fasta_infos = json.load(filed)
+            except:
+                fasta_infos = {}
+        if file in fasta_infos:
+            fasta_infos.pop(file)
+            print('remove fastainfo :',file)
+        else:
+            print(file,'not in fastainfo')
+    @staticmethod
+    def fasta_file_info(file,FASTA_INFO, *info):
+        log = FASTA_INFO
+        if not os.path.exists(log):
+            open(log, 'a').close()
+            print('get fasta info from :', file, end='...')
         with open(log, "r") as filed:
             try:
                 fastas_info = json.load(filed)
@@ -487,8 +508,8 @@ class Fasta(object):
         return infos
 
     @staticmethod
-    def ini_exons(file, write, sequences, effect_len=E_LEN):
-        infos = Fasta.fasta_file_info(file)
+    def ini_exons(file, write, sequences, effect_len,FLI_N,INNER_N,COLUMN,MEMORY,FASTA_INFO):
+        infos = Fasta.fasta_file_info(file,FASTA_INFO)
         echr=0
         with open(write, 'w', newline='\n') as writed:
             writed.write("#exonid\tchr\tbegin\tend\tlength\tflanklen\n")
@@ -499,17 +520,17 @@ class Fasta(object):
                         continue
                     if echr!=chromosome.chr:
                         echr=chromosome.chr
-                        print(chromosome.get_fasta_head(),end='\r')
+                        print(chromosome.get_fasta_head())
                     column = infos['column']
                     step = infos['step']
                     x.id = chromosome.id+x.id
-                    x.search_seq(filed, chromosome.end, pos, column, step)
-                    if FLI_N:
-                        for y in x.filtrate(effect_len, INNER_N):
-                            y.write_fasta(writed, COLUMN)
-                            y.del_seq()
-                    else:
-                        x.write_fasta(writed, column)
+                    if x.search_seq(filed, chromosome.end, pos, column, step,MEMORY):
+                        if FLI_N:
+                            for y in x.filtrate(effect_len, INNER_N):
+                                y.write_fasta(writed, COLUMN)
+                                y.del_seq()
+                        else:
+                            x.write_fasta(writed, column)
                     x.del_seq()
 
 
@@ -517,7 +538,7 @@ class Bed(object):
     '''Bed is a layout which includes chr,begin and end'''
     '''before Standardization'''
     @staticmethod
-    def ini_reg(reg, inifile):
+    def ini_reg(reg, inifile,BED,BED_INFO,E_LEN,CHIP_LEN,JOIN_GAP=0):
         '''
         get aimed regions from bed file, file needn't be in order
         '''
@@ -548,10 +569,10 @@ class Bed(object):
         with open(BED_INFO,'w') as writed:
             beds_info[inifile]=keys
             json.dump(beds_info, writed)
-        Bed.sort_reg(stanfile, inifile, keys)
+        Bed.sort_reg(stanfile, inifile,BED_INFO,E_LEN,CHIP_LEN,JOIN_GAP, keys)
         os.remove(stanfile)
     @staticmethod
-    def get_bed_info(file):
+    def get_bed_info(file,BED_INFO):
         log = BED_INFO
         print('get bed info from :', file)
         with open(log, "r") as filed:
@@ -580,13 +601,13 @@ class Bed(object):
         return keys
 
     @staticmethod
-    def sort_reg(file, sortreg, chrrs=[],effect_len=E_LEN,chip_len=CHIP_LEN,join_gap=JOIN_GAP):
+    def sort_reg(file, sortreg,BED_INFO,effect_len,chip_len,join_gap=0, chrrs=[]):
         '''
         sort aimed bed from filtrated regions
         '''
         print('sort reg file',file)
         if not chrrs:
-            chrrs = Bed.get_bed_info(file)
+            chrrs = Bed.get_bed_info(file,BED_INFO)
         #!!!!!
         with open(sortreg, 'w', newline='\n') as writed:
             pass
@@ -623,7 +644,7 @@ class Bed(object):
 
     '''after Standardization'''
     @staticmethod
-    def iterator_sequences(filed):
+    def iterator_sequences(filed,flank_len):
         i = 1  # use it for count every region on one chromosome
         echr = 0  # use it for count every chromesome
         for line in filed.readlines():
@@ -632,14 +653,14 @@ class Bed(object):
                 if echr != m.chr:
                     i = 1
                     echr = m.chr
-                yield Sequence(echr, m.begin, m.end, '.'+str(i), flank_len=FLANK_LEN)
+                yield Sequence(echr, m.begin, m.end, '.'+str(i), flank_len)
                 i += 1
 
 
 class Quality(object):
     '''before ini'''
     @staticmethod
-    def ini_qph(file, inifile):
+    def ini_qph(file, inifile,SEED):
         print('getting phred frequencies')
         frequencies = {}
         readlens={}
@@ -714,7 +735,7 @@ class Quality(object):
 
 class Depth(object):
     @staticmethod
-    def re_group(file,depth,segment=SEGMENT_E,chip_len=CHIP_LEN):
+    def re_group(file,depth,segment,chip_len):
         f=open(file , 'r',newline='\n')
         sreg=[]
         maxs=[]
@@ -744,40 +765,9 @@ class Depth(object):
         group=depth*chip_len/segment
         print('depth=',depth,'group=',group)
         return group
-    @staticmethod
-    def zero_dep(file,write):
-        x=1
-        print('zero file from',file)
-        #write zero
-        echr=0
-        tempwrite=write[:-3]
-        if not os.path.exists(write):
-            f=open(file , 'r',newline='\n')
-            w=open(tempwrite , 'w',newline='\n')
-            line=f.readline()
-            while(line):
-                chrr,b,dep=line.strip().split()
-                chrr=chrr.split('.')[-1]
-                if echr!=chrr:
-                    print('zero chromosome',chrr,'...')
-                    echr=chrr
-                    x=1
-                b,dep=int(b),int(dep)
-                while(x<b):
-                    sting='\t'.join([chrr,str(x),'0'])
-                    w.write(sting+'\n')
-                    x+=1
-                string='\t'.join([chrr,str(x),str(dep)])
-                w.write(string+'\n')
-                line=f.readline()
-                x+=1
 
-            f.close()
-            w.close()
-            print('dowm. outfile',write)
-            os.rename(tempwrite,write)
     @staticmethod
-    def dep2bed(file,depth,segment=SEGMENT_E,chip_len=CHIP_LEN,effect_len=E_LEN):
+    def dep2bed(file,depth,segment,chip_len,effect_len,CD,join_gap,BED_INFO):
         '''
         it use method -- chip length's total depth to identify sequence regions
         '''
@@ -820,6 +810,7 @@ class Depth(object):
         direction=0
         bsum=0
         t=0
+        bb=0
         regsums=[]
         line=f.readline()
         while(line):
@@ -910,7 +901,7 @@ class Depth(object):
         f.close()
         w.close()
         write3=CD+file.split('/')[-1]+'.sortbed'
-        Bed.sort_reg(write2,write3,join_gap=3*chip_len)
+        Bed.sort_reg(write2,write3,BED_INFO,effect_len,chip_len,join_gap)
         print('down. outfile',write2,write3)
 
 def get_chr_bed_num(file):
@@ -1018,16 +1009,17 @@ def view_depth(depfile,reg):
 
         
 
-def view_seq(file):
+def view_seq(file,FASTA_INFO,MEMORY):
     helps = '''
     file need be reference file
     -p <x> <pos1> <pos2>            : show chx from pos1 to pos2 sequence
     -help
     '''
-    infos=Fasta.fasta_file_info(file)
+    infos=Fasta.fasta_file_info(file,FASTA_INFO)
+    #print(infos)
     column = infos['column']
     step = infos['step']
-    with open(file, 'r') as filed:
+    with open(file, 'r',newline='\n') as filed:
         line = input('>>')
         while(line.strip() != 'exit'):
             line = line.split()
@@ -1036,7 +1028,7 @@ def view_seq(file):
             elif '-p' in line and len(line)>=4:   
                 chrr,begin,end=str2int(line[1:4])
                 pos=Fasta.analyse_infos(infos,chrr)[1]
-                texts=''.join(get_words(filed, pos, end-begin+1, MEMORY, column, step,pos=pos))
+                texts=''.join(get_words(filed, begin, end-begin+1, MEMORY, column, step,pos=pos))
                 texts=tidy_small_word(texts,100)
                 for text in texts:
                     print(text,end='')
@@ -1045,7 +1037,7 @@ def view_seq(file):
                 print('cannot idendify instruction' )
                 break
             line = input('>>')
-def view():
+def view(FASTA_INFO,MEMORY):
     helps = '''
     file need be reference file
     -p reffile            : show chx from pos1 to pos2 sequence
@@ -1060,15 +1052,10 @@ def view():
             print(helps)
         elif '-p' in line and len(line)>=2:
             file=line[1]
-            view_seq(file)
+            view_seq(file,FASTA_INFO,MEMORY)
         elif '-d' in line and len(line)>=3:
             depfile,regfile=line[1:3]
             view_depth(depfile,regfile)
         else:
             print('cannot idendify instruction' )
         line = input('>')
-
-
-if __name__ == '__main__':
-    file = input("please enter bedlist file you want to look for : ")
-    view()

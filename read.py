@@ -23,7 +23,10 @@ DEGENERATE = {'W': ['A', 'T'],
               }
 SUBSTITUTIONS = {'A': ('G', 'C', 'T', 'G'), 'G': ('A', 'C', 'T', 'A'), 'C': (
     'T', 'A', 'G', 'T'), 'T': ('C', 'G', 'A', 'C')}
-
+modes = Enum('mode', ('WES', 'WGS'))
+pairs = Enum('pair', ('SE', 'PE', ))
+mutation_ways = (Enum('mutation_way', ('table', 'formula', 'auto')))
+qphs = Enum('qph', ('sanger', 'soleax', ))
 
 def read_complement(read):
     l = []
@@ -32,7 +35,7 @@ def read_complement(read):
     return ''.join(l)
 
 
-def add_read_err(read, qphred, asc):
+def add_read_err(read, qphred, asc,QPH):
     ''' read,phred is list'''
     s = []
     for char, qua in zip(read, qphred):
@@ -47,18 +50,16 @@ def add_read_err(read, qphred, asc):
     return ''.join(s)
 
 
-def add_segment_err(segment):
+def add_segment_err(segment,*,error_e,error_d,substitution,deletion,insertion,**kw):
     ''' segment,phred is list'''
     size = len(segment)
-    error_e = ERROR_E
-    error_d = ERROR_D
     error_e = value2unnegtive(random.normalvariate(error_e, error_d))
     err_num = value2unnegtive(round((error_e*size)))
     err_num_list = random.sample(range(size), err_num)  # include zero
 
-    a = SUBSTITUTION
-    b = a+DELETION
-    c = a+b+INSERTION
+    a = substitution
+    b = a+deletion
+    c = a+b+insertion
 
     for n in err_num_list:
         randomnum = random.random()
@@ -94,7 +95,7 @@ def check_segment(segment):
 
 
 
-def wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d):
+def wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d,MEMORY):
     stop = chromosome.end
     begin = random.randint(1, stop-segment_e)
     if segment_d:
@@ -110,29 +111,27 @@ def wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d):
 
 
 
-def motify_segment(segment,extra,effect_len):
+def motify_segment(segment,extra,effect_len,*,ERROR,**kw):
     l=len(segment)
     segment=check_segment(segment)#segment is list
     extra=check_segment(extra)
     if ERROR:
-        segment = add_segment_err(segment)#list
+        segment = add_segment_err(segment,**kw)#list
+        #print('ERROR')
     if len(segment)<l:
         segment+=extra[:l-len(segment)]
     if len(segment)<effect_len:
-        print('segment is too short -> ignore it')
+        print('segment is too short -> ignore it',effect_len,len(segment))
         return ''
     else:
         return ''.join(segment)
-def wgsout(content,  quality, reffile,*R):
+def wgsout(content,  quality, reffile,MEMORY,*,effect_len,chip_len,R0,R1,R2,PAIR,SEG,SEGMENT_E,SEGMENT_D,DEPTH,REFERENCES,**kw):
     frequencies,sums,readlens, asc = Quality.get_qph(quality)
     readlen=Quality.get_avg_readlens(readlens)
     if pairs.PE.value == PAIR:
-        R1=R[0]
-        R2=R[1]
         r1 = open(R1, 'w', newline='\n')
         r2 = open(R2, 'w', newline='\n')
     elif PAIR == pairs.SE.value:
-        R0=R[0]
         r0 = open(R0, 'w', newline='\n')
     if os.path.exists(SEG):
         segs,summ=segfile(SEG)[:2]
@@ -154,31 +153,30 @@ def wgsout(content,  quality, reffile,*R):
                 if os.path.exists(SEG):
                     segment_e=random_weight_choice(segs,summ)
                     segment_d=0
-                segment = wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d)
-                segment=motify_segment(segment,'',E_LEN)#segment is list
+                segment = wgs_segment(filed, chromosome, pos, column, step,segment_e,segment_d,MEMORY)
+                segment=motify_segment(segment,'',effect_len,**kw)#segment is list
                 if not segment:
-                    continue
+                    continue 
                 head = chromosome.id+'.'+str(y+1)
                 if pairs.PE.value == PAIR:
-                    write_fastq(segment, head, qphreds, asc, r1, r2)
+                    write_fastq(segment, head, qphreds, asc, PAIR,r1, r2,**kw)
                 else:
-                    write_fastq(segment, head, qphreds, asc, r0)
+                    write_fastq(segment, head, qphreds, asc,PAIR, r0,**kw)
     if pairs.PE.value == PAIR:
         r1.close()
         r2.close()
     elif PAIR == pairs.SE.value:
         r0.close()
     print(' down.')
-def wesout(content, quality,seqfile,*R):
+def wesout(content, quality,seqfile,*,effect_len,chip_len,R0,R1,R2,PAIR,SEG,SEGMENT_E,SEGMENT_D,DEPTH,REFERENCES,**kw):
+    ERROR=kw['ERROR']
+    error_e=kw['error_e']
     frequencies,sums,readlens, asc = Quality.get_qph(quality)
     readlen=Quality.get_avg_readlens(readlens)
     if pairs.PE.value == PAIR:
-        R1=R[0]
-        R2=R[1]
         r1 = open(R1, 'w', newline='\n')
         r2 = open(R2, 'w', newline='\n')
     elif PAIR == pairs.SE.value:
-        R0=R[0]
         r0 = open(R0, 'w', newline='\n')
     if os.path.exists(SEG):
         print('get segment length from file :',SEG)
@@ -192,27 +190,27 @@ def wesout(content, quality,seqfile,*R):
         qphreds = Quality.get_qphred_reads(frequencies,sums,readlens, 10+length//100)
         turns = round(DEPTH*x.mid_length/readlen *
                         content/len(REFERENCES)/PAIR)
-        if length < E_LEN:
+        if length < effect_len:
             print('\tseq length %s too short -> not ouput '%length)
             print(x.get_fasta_head(),'\n',x.seq)
             continue
         if echr!=x.chr:
-            print('\twriting exon : %s' % x.id, end='\r')
+            print('\twriting exon : %s' % x.id)
             echr=x.chr
         for y in range(turns):
             if os.path.exists(SEG):
                 segment_e=random_weight_choice(segs,summ)
                 segment_d=0
             segment,extra = x.wes_segment(
-                    E_LEN, CHIP_LEN, segment_e, segment_d)
-            segment=motify_segment(segment,extra,E_LEN)
+                    effect_len, chip_len, segment_e, segment_d,ERROR,error_e)
+            segment=motify_segment(segment,extra,effect_len,**kw)
             if not segment:
                 continue
             head = x.id+'.'+str(y+1)#segment is str
             if pairs.PE.value == PAIR:
-                write_fastq(segment, head, qphreds, asc, r1, r2)
+                write_fastq(segment, head, qphreds, asc, PAIR,r1, r2,**kw)
             else:
-                write_fastq(segment, head, qphreds, asc, r0)
+                write_fastq(segment, head, qphreds, asc,PAIR,r0,**kw)
     if pairs.PE.value == PAIR:
         r1.close()
         r2.close()
@@ -221,7 +219,7 @@ def wesout(content, quality,seqfile,*R):
     print(' down.')
 
 
-def write_fastq(segment, head, qphreds,  asc, *R):
+def write_fastq(segment, head, qphreds,  asc,PAIR, *R,MISMATCH,QPH,**kw):
     if pairs.PE.value == PAIR:
         qphred1 = random.choice(qphreds)
         qphred2 = random.choice(qphreds)
@@ -239,8 +237,8 @@ def write_fastq(segment, head, qphreds,  asc, *R):
             e=random.randint(0,s)
             qphred2=qphred2[e:e+len(read2)]
         if MISMATCH:
-            read1 = add_read_err(read1, qphred1, asc)
-            read2 = add_read_err(read2, qphred2, asc)
+            read1 = add_read_err(read1, qphred1, asc,QPH)
+            read2 = add_read_err(read2, qphred2, asc,QPH)
         if random.random()>0.5:
             R[0].write('@'+head+'\t1:Y:0:\n'+read1+'\n+\n'+qphred1+'\n')
             R[1].write('@'+head+'\t2:Y:0:\n'+read1+'\n+\n'+qphred1+'\n')
@@ -256,13 +254,13 @@ def write_fastq(segment, head, qphreds,  asc, *R):
             e=random.randint(0,s)
             qphred=qphred[e:e+len(read)]
         if MISMATCH:
-            read = add_read_err(read, qphred, asc)
+            read = add_read_err(read, qphred, asc,QPH)
         R[0].write('@'+head+'\n'+read+'\n+\n'+qphred+'\n')
 
 
-def write_ref_muta(ref, inimuta, refmuta, nid):
+def write_ref_muta(ref, inimuta, refmuta, nid,COLUMN,MEMORY,FASTA_INFO):
     print("write mutation's reference from file :", ref, inimuta)
-    infos = Fasta.fasta_file_info(ref)
+    infos = Fasta.fasta_file_info(ref,FASTA_INFO)
     column = infos['column']
     step = infos['step']
     chrs = Fasta.chrs_info(infos)
@@ -276,7 +274,7 @@ def write_ref_muta(ref, inimuta, refmuta, nid):
                 for x in mutas:
                     length=length-x.length+x.seq_length
                 nchromosome=Sequence(chrr,chromosome.begin,chromosome.end+length,chromosome.id)
-                print(nchromosome.get_fasta_head(), end='\r')
+                print(nchromosome.get_fasta_head())
                 chromosome.id += '.%s' % nid
                 wd2.write('%s\n' % nchromosome.get_fasta_head())
                 npos = wd2.tell()
@@ -284,21 +282,15 @@ def write_ref_muta(ref, inimuta, refmuta, nid):
                                 'chromosome': chromosome.get_fasta_head()}
                 begin, cur = 1, 0
                 mutas = Fasta.iterator_fasta(inimuta, chromosome.id)
-                '''
-                ss=[]
-                for x in mutas:
-                    ss.append((begin,x.begin))
-                    ss.append((x.begin+1,x.end))
-                    begin=x.end+1
-                ss.append((begin,chromosome.end))
-                print(ss)
-                '''
                 for x in mutas:
                     seqs = get_words(fd1, begin, x.begin-begin,
                                         MEMORY, column, step, pos)
+                    print('ref(',begin, x.begin-1,end=')-')
                     cur = write_big_words(wd2, seqs, COLUMN, cur)
+                    print('mut(',x.begin,x.end,end=')-')
                     cur = write_small_word(wd2, x.seq, COLUMN, cur)
                     begin = x.end+1
+                print('ref(',begin, chromosome.end,')')
                 seqs = get_words(fd1, begin, chromosome.end-begin+1,
                                     MEMORY, column, step, pos=pos)
                 cur = write_big_words(wd2, seqs, COLUMN, cur)
@@ -315,10 +307,19 @@ def write_ref_muta(ref, inimuta, refmuta, nid):
         json.dump(fasta_infos, writed)
     print('down. outfile : ', refmuta)
 
+'''
+ss=[]
+for x in mutas:
+    ss.append((begin,x.begin))
+    ss.append((x.begin+1,x.end))
+    begin=x.end+1
+ss.append((begin,chromosome.end))
+print(ss)
+'''
 
-def readout(refs, regs, qph, inimutation, mut,*R):
-    if os.path.exists(SEG):
-        pass
+def readout(refs, regs, qph, inimutation, mut,*,MODE,COLUMN,MEMORY,FASTA_INFO,FLI_N,INNER_N,**kw):
+    effect_len=kw['effect_len']
+    flank_len=kw['flank_len']
     for ref, reg in zip(refs, regs):
         # haplotype + mutu - > mute reg
         regfile = reg+'.reg'+str(mut[0])
@@ -326,18 +327,20 @@ def readout(refs, regs, qph, inimutation, mut,*R):
         tempref = ref+'.ref'+str(mut[0])
         tt=tempref+'.temp'
         if not os.path.exists(tempref):
-            write_ref_muta(ref, inimutation, tt,mut[0])
+            write_ref_muta(ref, inimutation, tt,mut[0],COLUMN,MEMORY,FASTA_INFO)
             os.rename(tt,tempref)
         if MODE == modes.WES.value:
             # haplotype + mute -> mute exome
             seqfile = reg+'.exome'+str(mut[0])
             tt=seqfile+'.temp'
             if not os.path.exists(seqfile):
-                Fasta.ini_exome(tempref, regfile, tt)
+                Fasta.ini_exome(tempref, regfile, tt,effect_len,flank_len,FLI_N,INNER_N,COLUMN,MEMORY,FASTA_INFO)
                 os.rename(tt,seqfile)
-            wesout(mut[1],  qph, seqfile,*R)
+            wesout(mut[1],  qph, seqfile,**kw)
+            Fasta.remove_fastainfo(FASTA_INFO,tempref)
             os.remove(tempref)
             os.remove(seqfile)
         elif MODE == modes.WGS.value:
-            wgsout(mut[1], qph, tempref,*R)
+            wgsout(mut[1], qph, tempref,MEMORY,**kw)
+            Fasta.remove_fastainfo(FASTA_INFO,tempref)
             os.remove(tempref)

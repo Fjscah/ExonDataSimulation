@@ -3,6 +3,15 @@ from functools import reduce
 from basic import *
 from sequence import *
 import sys
+COMPLEMENT = {'A': 'T', 'G': 'C', 'C': 'G', 'T': 'A'}
+
+
+def read_complement(read):
+    l = []
+    for char in read:
+        l.append(COMPLEMENT[char.upper()])
+    return ''.join(l)
+
 
 class Indel(Line):
     def __init__(self, begin, end, alt):
@@ -31,10 +40,11 @@ class Indel(Line):
 
     @property
     def theory_length(self):
-        if self.length>-1:
+        if self.length > -1:
             return len(self._alt)-self.length
         else:
             return len(self.alt)
+
     def get_formula(self):
         formula = ''
         if self.length == -1:
@@ -62,10 +72,10 @@ class Segment(object):
         if isinstance(t, Sequence):
             length = t.length
             for x in self._indels:
-                if x.length>-1:
+                if x.length > -1:
                     length += x.theory_length
                 else:
-                    length=x.theory_length-t.length
+                    length = x.theory_length-t.length
         if isinstance(t, list):
             for x in t:
                 length += x.theory_length
@@ -79,7 +89,8 @@ class Segment(object):
 
     @staticmethod
     def get_segment_formu(formula):
-        chrr, formula, cnv = re.match('(\d*)\((.*)\)\**(-*\d*)$', formula).groups()
+        chrr, formula, cnv = re.match(
+            '(\d*)\((.*)\)\**(-*\d*)$', formula).groups()
         try:
             cnv = int(cnv)
         except:
@@ -126,18 +137,21 @@ class Segment(object):
                 seq += x.seq
         elif isinstance(self._sequence, Indel):
             seq = self._sequence.alt
-        if self._cnv <0:
-            seq=seq[::-1]
+        if self._cnv < 0:
+            seq = seq[::-1]
+            seq=read_complement(seq)
         return seq*abs(self._cnv)
 
-    def search_seq(self, filed, infos, column, row_step):
+    def search_seq(self, filed, infos, column, row_step, MEMORY):
         if isinstance(self._sequence, Sequence):
             chromosome, pos = Fasta.analyse_infos(infos, self._sequence.chr)
-            self._sequence.search_seq(
-                filed, chromosome.end, pos, column, row_step)
+            if not self._sequence.search_seq(filed, chromosome.end, pos, column, row_step, MEMORY):
+                return False
         elif isinstance(self._sequence, list):
             for x in self._sequence:
-                x.search_seq(filed, infos, column, row_step)
+                if not x.search_seq(filed, infos, column, row_step, MEMORY):
+                    return False
+        return True
 
     def del_seq(self):
         if isinstance(self._sequence, Sequence):
@@ -169,7 +183,7 @@ class Segment(object):
         t = self._sequence
         inserts = []
         if isinstance(t, Sequence):
-            cur ,end= t.begin,t.begin
+            cur, end = t.begin, t.begin
             self._indels.sort(key=lambda x: x.begin)
             for x in self._indels:
                 l = x.length
@@ -179,27 +193,29 @@ class Segment(object):
                     end = x.begin
                 inserts.append((t.chr, cur, end, cur-t.begin, end-t.begin))
                 cur = end+1
-            if t.end>end:
+            if t.end > end:
                 inserts.append((t.chr, cur, t.end, cur-t.begin, t.end-t.begin))
         if isinstance(t, list):
             for x in t:
                 l = length
                 inserts += x.get_inserts(l)
                 l += x.theory_length
-        l=self.theory_length//abs(self._cnv)
-        if self._cnv==1:
+        l = self.theory_length//abs(self._cnv)
+        if self._cnv == 1:
             return inserts
-        insert=deepcopy(inserts)
-        inserts=[]
-        if self._cnv>0:
+        insert = deepcopy(inserts)
+        inserts = []
+        if self._cnv > 0:
             for n in range(self._cnv):
                 for x in insert:
-                    inserts.append((x[0],x[1],x[2],x[3]+l*n+length,x[4]+l*n+length))
-        elif self._cnv<0:
-            length+=self.theory_length
-            for n in range(1+self._cnv,1):
+                    inserts.append(
+                        (x[0], x[1], x[2], x[3]+l*n+length, x[4]+l*n+length))
+        elif self._cnv < 0:
+            length += self.theory_length
+            for n in range(1+self._cnv, 1):
                 for x in insert:
-                    inserts.append((x[0],x[1],x[2],-x[3]+l*n+length-1,-x[4]+l*n+length-1))
+                    inserts.append(
+                        (x[0], x[1], x[2], -x[3]+l*n+length-1, -x[4]+l*n+length-1))
         return inserts
 
 
@@ -220,7 +236,6 @@ class Muta(Sequence):
     @ chrs.setter
     def chrs(self, chrs):
         self._chrs = chrs
-
 
     @property
     def theory_length(self):
@@ -271,16 +286,18 @@ class Muta(Sequence):
         # seq+='|.'+self.rflank
         return seq
 
-    def search_seq(self, filed, infos, column, row_step):
+    def search_seq(self, filed, infos, column, row_step, MEMORY):
         # Sequence.search_seq(self,filed,stop,chr_pos,column,row_step)
         for x in self._segments:
-            x.search_seq(filed, infos, column, row_step)
+            if not x.search_seq(filed, infos, column, row_step, MEMORY):
+                return False
+        return True
 
     def del_seq(self):
         self._seq = ''
         for x in self._segments:
             x.del_seq()
-
+    """
     @staticmethod
     def merge(muta1, muta2, flank_len=FLANK_LEN):
         if muta1.chr == muta2.chr:
@@ -293,10 +310,11 @@ class Muta(Sequence):
             else:
                 muta = [muta1, muta2]
         return muta
+    """
 
     def get_inserts(self, length):
         inserts = []
-        length=self._begin+length
+        length = self._begin+length
         for x in self._segments:
             inserts += x.get_inserts(length)
             length += x.theory_length
@@ -307,9 +325,11 @@ class chromosome(object):
     def __init__(self, chrr):
         self._chr = chrr
         self.mutas = []
+
     @property
     def chr(self):
         return self._chr
+
     def add_var_formula(self, begin, end, formula):
         muta = Muta(self._chr, begin, end)
         muta.add_var_formula(formula)
@@ -362,75 +382,95 @@ class Haploid(object):
             print('normal haploid')
         else:
             print('mutation haploid')
-        for x in sorted(self.chromosomes.values(),key=lambda y:int(y.chr)):
+        for x in sorted(self.chromosomes.values(), key=lambda y: int(y.chr)):
             x.show_chromosome()
 
     def neaten(self):
         for x in self.chromosomes.values():
             x.neaten()
 
-    def write_muta_seq(self, ref, outfile):
-        infos = Fasta.fasta_file_info(ref)
-        print('write mutation sequence from ',ref)
+    def write_muta_seq(self, ref, outfile, COLUMN, FASTA_INFO, MEMORY):
+        infos = Fasta.fasta_file_info(ref, FASTA_INFO)
+        print('write mutation sequence from ', ref)
         with open(ref, 'r', newline='\n') as filed:
             with open(outfile, 'a', newline='\n') as writed:
+                writed.write("#exonid\tchr\tbegin\tend\tlength\tflanklen\n")
                 for x in sorted(self.chromosomes.keys()):
                     i = 1
+                    invalids = []
                     for y in self.chromosomes[x].mutas:
-                        chromosome,pos=Fasta.analyse_infos(infos,y.chr)
+                        chromosome, pos = Fasta.analyse_infos(infos, y.chr)
                         y.id = chromosome.id+'.'+str(i)+'m'
-                        y.search_seq(
-                            filed, infos, infos['column'], infos['step'])
-                        y.write_fasta(writed, COLUMN)
+                        if y.end > chromosome.end:
+                            print('muta del out of range -> ignore it',
+                                  y.chr, y.end, chromosome.end)
+                            invalids.append(y)
+                            continue
+                        if not y.search_seq(filed, infos, infos['column'], infos['step'], MEMORY):
+                            print('muta ins out of range -> ignore it',
+                                  y.chr, y.end, chromosome.end)
+                            invalids.append(y)
+                            continue
+                        else:
+                            y.write_fasta(writed, COLUMN)
                         y.del_seq()
-        print('down. outfile :',outfile)
-    def write_muta_bed(self, reg, outfile,effect_len=E_LEN,chip_len=CHIP_LEN):
-        print('reposition from file :',reg)
-        with open(outfile,'w',newline='\n')as f:
+                    for z in invalids:
+                        self.chromosomes[x].mutas.remove(z)
+                        invalids = []
+
+        print('down. outfile :', outfile)
+
+    def write_muta_bed(self, reg, outfile, BED_INFO, effect_len, chip_len):
+        print('reposition from file :', reg)
+        with open(outfile, 'w', newline='\n')as f:
             pass
-        chrrs = Bed.get_bed_info(reg)
+        chrrs = Bed.get_bed_info(reg, BED_INFO)
         for chrr in chrrs:
-            print('reposition chromosome',chrr,' regions ',end='\r')
+            print('reposition chromosome', chrr, ' regions ')
             if chrr in self.chromosomes:
                 inserts = self.chromosomes[chrr].get_inserts()
                 sranges = self.chromosomes[chrr].get_dele_insert()
             else:
-                inserts=[]
-                sranges=[]
+                inserts = []
+                sranges = []
             sss = []
             for schr in chrrs:
                 schr_insets = [x for x in inserts if int(x[0]) == schr]
                 if not schr_insets:
                     continue
                 ranges = Bed.get_ranges(reg, schr)
-                sss=cross_insert(schr_insets,ranges)
+                sss = cross_insert(schr_insets, ranges)
             ranges = Bed.get_ranges(reg, chrr)
             if sranges:
-                print('differ and insert chromosome',chrr,end='\r')
+                #print('differ and insert chromosome',chrr,end='\r')
                 ranges = differ_insert_ranges(ranges, sranges)
             ranges += sss
+            ranges = merge_ranges(ranges, 0, effect_len)  # 0:join_gap
+            '''
             if sss:
-                ranges = merge_ranges(ranges, JOIN_GAP,effect_len)
                 for i,y in enumerate(ranges):
                     if y[1]-y[0] < chip_len:
                         s=(chip_len-y[1]+y[0]+1)//2
                         a=y[0]-s
                         b=y[1]+s
                         ranges[i]=(a,b)
+            '''
             with open(outfile, 'a', newline='\n') as filed:
                 for x in ranges:
                     filed.write('%s\t%s\t%s\n' % (chrr, x[0], x[1]))
-        print('down. outfile :',outfile)
-            
+        print('down. outfile :', outfile)
+
 
 class Polyploid(object):
     def __init__(self, idd, content, *haploids):
         self._id = idd
         self._content = content
         self.haploids = haploids
+
     @property
     def id(self):
         return self._id
+
     def add_var_formula(self, genotype, chrr, begin, end, formula):
         polys = re.findall(r'[*.]+', genotype)
         for n, x in enumerate(polys):
@@ -449,8 +489,8 @@ class Polyploid(object):
             x.neaten()
 
     @staticmethod
-    def self_poly_formufile(mutafile, idd,content):
-        polyploid = Polyploid(idd, content, *([Haploid()]*len(REFERENCES)))
+    def self_poly_formufile(mutafile, idd, content, polynum):
+        polyploid = Polyploid(idd, content, *([Haploid()]*polynum))
         with open(mutafile, 'r', newline='\n') as filed:
             for line in filed.readlines():
                 if line[0] != '#' and line[0] != '\n':
@@ -462,22 +502,25 @@ class Polyploid(object):
         return polyploid
 
 
-def ini_muta(inireferences, iniregions, mut, inifile):
-    mutation=mut[2]
+def ini_muta(inireferences, iniregions, mut, inifile, polynum, COLUMN, MEMORY, BED_INFO, FASTA_INFO, effect_len, chip_len):
+    mutation = mut[2]
     # load one polyoid mutation set
-    polyploid = Polyploid.self_poly_formufile(mutation, mut[0],mut[1])
-    polyploid.show_polyploid()
+    polyploid = Polyploid.self_poly_formufile(
+        mutation, mut[0], mut[1], polynum)
+    # polyploid.show_polyploid()
     #!!!!!
     # output its(one polyoid) targed region on mutation reference
     for n, reg in enumerate(iniregions):
-        regmutation=reg+'.reg'+str(polyploid.id)
-        polyploid.haploids[n].write_muta_bed(reg, regmutation)
+        regmutation = reg+'.reg'+str(polyploid.id)
+        polyploid.haploids[n].write_muta_bed(
+            reg, regmutation, BED_INFO, effect_len, chip_len)
     with open(inifile, 'w', newline='\n') as writed:
         pass
     # output its(one polyoid) all mutations sequence
     for n, ref in enumerate(inireferences):  # n is the no.n haploid
         # for every haploid , output its all mutations sequence
-        polyploid.haploids[n].write_muta_seq(ref, inifile)
+        polyploid.haploids[n].write_muta_seq(
+            ref, inifile, COLUMN, FASTA_INFO, MEMORY)
     '''
     # output its(one polyoid) all mutation  reference
     for n, ref in enumerate(inireferences):
@@ -490,28 +533,30 @@ def ini_muta(inireferences, iniregions, mut, inifile):
         Fasta.ini_exome(x, y, z)
     '''
 
+
 def vcf2formula(file):
-    formulafile=file+'formula'
-    with open(file,'r',newline='\n')as filed:
-        with open(formulafile,'w',newline='\n')as writed:
+    formulafile = file+'formula'
+    with open(file, 'r', newline='\n')as filed:
+        with open(formulafile, 'w', newline='\n')as writed:
             for line in filed.readlines():
-                if re.match('#',line):
+                if re.match('#', line):
                     continue
-                infos=line.split()
-                chrr,pos,idd,ref,alt,qual,filt=infos[:7]
-                chrr=chrr.strip('chr')
-                end=int(pos)+len(ref.strip('.'))-1
-                alt=alt.strip('.')
+                infos = line.split()
+                chrr, pos, idd, ref, alt, qual, filt = infos[:7]
+                chrr = chrr.strip('chr')
+                end = int(pos)+len(ref.strip('.'))-1
+                alt = alt.strip('.')
                 if alt:
-                    alt='('+alt+')*1'
-                alt='('+alt+')'
-                tumor=infos[-1]
-                tumor=tumor.split(':')[0]
-                tumor=tumor.replace('1','*')
-                tumor=tumor.replace('0','.')
+                    alt = '('+alt+')*1'
+                alt = '('+alt+')'
+                tumor = infos[-1]
+                tumor = tumor.split(':')[0]
+                tumor = tumor.replace('1', '*')
+                tumor = tumor.replace('0', '.')
                 if '*' in tumor:
-                    s='\t'.join([tumor,chrr,pos,str(end),alt])
+                    s = '\t'.join([tumor, chrr, pos, str(end), alt])
                     writed.write(s+'\n')
+
 
 if __name__ == '__main__':
     info = sys.argv
