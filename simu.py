@@ -28,7 +28,7 @@ if __name__ == '__main__':
     -se/pe        : set the way to generate reads
     -cd           : set path to store
     -R            : set output fastq files extra name
-    -ini            : set peofile
+    -ini          : set peofile
     if occur something wrong, try delete bed_info and fasta_info
     '''
     info = sys.argv
@@ -40,17 +40,17 @@ if __name__ == '__main__':
         profile = 'profile1.ini'
     conf = configparser.ConfigParser()
     conf.read(profile)
-    CHIP_LEN, E_LEN, FLANK_LEN,JOIN_GAP = get_value(
-        conf, 'chip', int, "CHIP_LEN", "E_LEN", "FLANK_LEN",'JOIN_GAP')
+    CHIP_LEN, E_LEN, FLANK_LEN, JOIN_GAP, SLIDE_STEP = get_value(
+        conf, 'chip', int, "CHIP_LEN", "E_LEN", "FLANK_LEN", 'JOIN_GAP', 'SLIDE_STEP')
     ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
         conf, "error", float,  "ERROR_E", "ERROR_D", "SUBSTITUTION", "INSERTION", "DELETION")
     ERROR = conf.getboolean("error", "ERROR")
     DEPTH, MODE, PAIR = get_value(conf, 'read', int, "DEPTH", 'MODE', 'PAIR')
     MISMATCH = conf.getboolean("read", 'MISMATCH')
     FLI_N, INNER_N = get_value(conf, "sequence", bool, 'FLI_N', 'INNER_N')
-    QPH, SEED = get_value(conf, "quality", int, "QPH", "SEED")
-    CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS = get_value(
-        conf, 'file', str, "CD", "QUALITY", 'BED_INFO', "FASTA_INFO", 'REFERENCES', 'REGIONS', 'MUTATIONS')
+    QPH, QROW = get_value(conf, "quality", int, "QPH", "QROW")
+    CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS,LABEL = get_value(
+        conf, 'file', str, "CD", "QUALITY", 'BED_INFO', "FASTA_INFO", 'REFERENCES', 'REGIONS', 'MUTATIONS','LABEL')
     COLUMN, MEMORY, = get_value(conf, 'file', int, "COLUMN", "MEMORY")
     SEGMENT_E = conf.getint("segment", "SEGMENT_E")
     SEGMENT_D = conf.getfloat("segment", "SEGMENT_D")
@@ -68,6 +68,8 @@ if __name__ == '__main__':
     FNA = get_dict(conf, "fna")
     BED = get_dict(conf, "bed")
     t = time.strftime('%Y%m%d_%H_%M_%S', time.localtime(time.time()))
+    if LABEL:
+        t=LABEL
     R1 = CD+"R1_%s.fastq" % (t)
     R2 = CD+"R2_%s.fastq" % (t)
     R0 = CD+"R_%s.fastq" % (t)
@@ -111,7 +113,7 @@ if __name__ == '__main__':
         "FLI_N": FLI_N,
         "INNER_N": INNER_N,
         "QPH": QPH,
-        "SEED": SEED,
+        "QROW": QROW,
         "CD": CD,
         "COLUMN": COLUMN,
         "MEMORY": MEMORY,
@@ -134,16 +136,16 @@ if __name__ == '__main__':
     references = set(REFERENCES)
     regions = set(REGIONS)  # filtrate the same region file
     inireferences = list(
-        map(lambda x: CD+x[0].split('/')[-1].strip()+'.ini', references))
+        map(lambda x: CD+'ini'+x[0].split('/')[-1].strip(), references))
     iniregions = list(
-        map(lambda x: CD+x[0].split('/')[-1].strip()+'.ini', regions))
+        map(lambda x: CD+'ini'+x[0].split('/')[-1].strip(), regions))
     iniexomes = list(
-        map(lambda x: CD+x[0].split('/')[-1].strip()+'.exome', REGIONS))
+        map(lambda x: CD+'exome'+x[0].split('/')[-1].strip()+'.fna', REGIONS))
     inimutations = list(
-        map(lambda x: CD+x[2].split('/')[-1].strip()+'.ini', MUTATIONS))
+        map(lambda x: CD+'ini'+x[2].split('/')[-1].strip(), MUTATIONS))
     stanfiles = list(
         map(lambda x: CD+x[0].split('/')[-1].strip()+'.temp', regions))
-    iniquality = CD+QUALITY.split('/')[-1].strip()+'.ini'
+    iniquality = CD+'ini'+QUALITY.split('/')[-1].strip()
 
     if not os.path.exists(CD):
         os.makedirs(CD)
@@ -168,12 +170,12 @@ if __name__ == '__main__':
                                CHIP_LEN, 0)  # 0:join_gap
 
     elif '-qph' in info:
-        Quality.ini_qph(QUALITY, iniquality, SEED)
+        Quality.ini_qph(QUALITY, iniquality, QROW)
 
     elif '-seq' in info:  # initailize exome sequence from initialized regions
         for x, y, z in zip(inireferences, iniregions, iniexomes):
             Fasta.ini_exome(x, y, z, E_LEN, 0, FLI_N, INNER_N,
-                            COLUMN,MEMORY, FASTA_INFO)  # 0:flank_len
+                            COLUMN, MEMORY, FASTA_INFO)  # 0:flank_len
 
     elif '-mut' in info:  # initialize mutations
         for mut, y, in zip(MUTATIONS, inimutations):
@@ -189,8 +191,8 @@ if __name__ == '__main__':
         for x, mut in zip(inimutations, MUTATIONS):
             # polyoid 's id,content,mutationseq,inireferences,mutationsbed
             # mutationsbed can get from iniregions+polys
-            readout(inireferences, iniregions, iniquality, x, mut, **DEFAULT)
-
+            readout(inireferences, iniregions, iniquality, x, mut,LABEL, **DEFAULT)
+ 
     elif '-dep' in info:
         depfile = info[info.index('-dep')+1]
         depth = int(info[info.index('-dep')+2])
@@ -199,7 +201,7 @@ if __name__ == '__main__':
             print('get segment length from file :', SEG)
             segment_e = segfile(SEG)[2]
         Depth.dep2bed(depfile, depth, segment_e, CHIP_LEN,
-                      E_LEN, CD, JOIN_GAP, BED_INFO)
+                      E_LEN, CD, JOIN_GAP, BED_INFO, SLIDE_STEP)
 
     elif '-clear' in info:
         def clear(listt):
@@ -213,9 +215,9 @@ if __name__ == '__main__':
         clear(stanfiles)
         clear([iniquality, BED_INFO, FASTA_INFO])
         for x in os.listdir(CD):
-            if '.ini' in x[-4:]:
+            if 'ini' in x[:4]:
                 os .remove(CD+x)
-            elif '.temp' in x[-4]:
+            elif '.temp' in x[-4:]:
                 os.remove(CD+x)
 
     elif '-view' in info:

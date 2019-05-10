@@ -3,7 +3,7 @@ import random
 import re
 import sys
 import time
-
+import os
 from basic import *
 from sequence import *
 
@@ -317,21 +317,21 @@ ss.append((begin,chromosome.end))
 print(ss)
 '''
 
-def readout(refs, regs, qph, inimutation, mut,*,MODE,COLUMN,MEMORY,FASTA_INFO,FLI_N,INNER_N,**kw):
+def readout(refs, regs, qph, inimutation, mut,label,*,MODE,COLUMN,MEMORY,FASTA_INFO,FLI_N,INNER_N,**kw):
     effect_len=kw['effect_len']
     flank_len=kw['flank_len']
     for ref, reg in zip(refs, regs):
         # haplotype + mutu - > mute reg
-        regfile = reg+'.reg'+str(mut[0])
+        regfile =os.path.splitext(reg)[0]+str(mut[0])+'.bed'
         # haplotype + mute -> mut ref
-        tempref = ref+'.ref'+str(mut[0])
+        tempref = os.path.splitext(ref)[0]+str(mut[0])+'.fna'
         tt=tempref+'.temp'
         if not os.path.exists(tempref):
             write_ref_muta(ref, inimutation, tt,mut[0],COLUMN,MEMORY,FASTA_INFO)
             os.rename(tt,tempref)
         if MODE == modes.WES.value:
             # haplotype + mute -> mute exome
-            seqfile = reg+'.exome'+str(mut[0])
+            seqfile = os.path.splitext(reg)[0]+'exome'+str(mut[0])+'.fna'
             tt=seqfile+'.temp'
             if not os.path.exists(seqfile):
                 Fasta.ini_exome(tempref, regfile, tt,effect_len,flank_len,FLI_N,INNER_N,COLUMN,MEMORY,FASTA_INFO)

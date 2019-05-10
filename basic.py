@@ -162,16 +162,18 @@ def get_words(filed, begin, length, memory, column, step, pos=-1):
     line = filed.readline()
     while(line and length>0):
         line = line.strip()
-        length -= len(line)
+        t = len(line)    
+        length -= t
         if length < 0:
             line=line[:length]
-        l-=len(line)
+            t=len(line)
+        l-=t
         if l<0:
             s.append(line[:l])
             s = ''.join(s)
             seqs.append(s)
             s = [line[l:]]
-            l = memory-len(s[0])
+            l = memory-len(s[0])   
         else:
             s.append(line)
         line = filed.readline()
@@ -245,7 +247,7 @@ def value2positive(value):
 def merge_ranges(elist, join_gap,effect_len=0):
     '''llist like [(x1,y1),(x2,y2),(x3,y3)]'''
     nlist = []
-    print('join_gap=',join_gap)
+    #print('join_gap=',join_gap)
     if len(elist) <= 1:
         return elist
     else:
@@ -293,7 +295,7 @@ def differ_range(elist, slist):
 
 
 def differ_insert_ranges(elist, slist):
-    ll = len(slist)-1
+    ll = len(slist)
     if not ll:
         return elist
     elist.sort()
@@ -359,40 +361,55 @@ def cross_insert(elist,slist):
         n=t
         y = slist[n]
     return nlist
+def first_derivate(elist):
+    nlist=[]
+    a=elist[0]
+    for b in elist[1:]:
+        nlist.append(b-a)
+        a=b
+    return nlist
 
-def onechip(s,group,c,e):
+def onechip(s,group,c,e,gap):
     #depth*c=(c+r-2*e))*r
+    #gap=e
+    #s=round(s/c)*c
+    print('gap=',gap,'chip_len=',c,'seglen=',s)
     cr=group/(s+c-2*e)
     n=2*s+c-2*e
     ss= []
-    aa=min(s-1,s+c-2*e)
-    bb=max(s-1,s+c-2*e)
+    aa=min(s,s+c-2*e)
+    bb=max(s,s+c-2*e)
     cc=2*s+c-2*e
     top=aa+1
     for x in range(n):
-        if x<= aa:
+        if x< aa:
             ss.append((x+1)*cr)
-        elif x<=bb:
+        elif x<bb:
             ss.append((top)*cr)
         elif x<=cc:
             ss.append((n-x)*cr)
-    midsum=sum(ss[s-e:e-s])
+    midsum=sum(ss[aa:aa+gap])
+    #print('midsum',midsum,len(ss[s-e:s-e+gap]))
     distances=[(0,0)]
     for x in range(1,(s-e+c)//c):
         ds=[0,]+ss[:x*c-1]
-        dsum=sum(ds)
+        dsum=sum([v for k,v in enumerate(ds) if k%c<gap ])
         for z,y in enumerate(ss[x*c-1:s-e]):
             v=ds.pop(0)
             ds.append(y)
-            dsum+=y-v  
+            #dsum+=y-v  
+            dsum=sum([v for k,v in enumerate(ds) if k%c<gap ])
             if dsum>=midsum:
                 if z:
-                    distances.append((s-e-z+c,s-e-z+c-c*x))
+                    distances.append((s-e-z+c,s-e-z+c-c*x))# caculatedis->real add
                 break
+        
+        #print('dsum',dsum,len([v for k,v in enumerate(ds) if k%c<gap ]))
         if z==0:
             dsum=0
             for z,y in enumerate(ds):
-                dsum+=y
+                if z%c<gap:
+                    dsum+=y
                 if dsum>=midsum:
                     print(x)
                     distances.append((s-e-z+c+c*x,s-e-z+c))
@@ -562,42 +579,4 @@ def segfile(file):
     print('down. segfile',file)
     return dicts,summ,avg
 
-modes = Enum('mode', ('WES', 'WGS'))
-pairs = Enum('pair', ('SE', 'PE', ))
-mutation_ways = (Enum('mutation_way', ('table', 'formula', 'auto')))
-qphs = Enum('qph', ('sanger', 'soleax', ))
-conf = configparser.ConfigParser()
-conf.read('profile.ini')
-CHIP_LEN, E_LEN, FLANK_LEN = get_value(
-    conf, 'chip', int, "CHIP_LEN","E_LEN", "FLANK_LEN")
-ERROR_E, ERROR_D, SUBSTITUTION, INSERTION, DELETION = get_value(
-    conf, "error", float,  "ERROR_E", "ERROR_D", "SUBSTITUTION", "INSERTION", "DELETION")
-ERROR = conf.getboolean("error", "ERROR")
-DEPTH, MODE, PAIR = get_value(conf, 'read', int, "DEPTH", 'MODE', 'PAIR')
-MISMATCH = conf.getboolean("read", 'MISMATCH')
-FLI_N, INNER_N = get_value(conf, "sequence", bool, 'FLI_N', 'INNER_N')
-QPH, SEED = get_value(conf, "quality", int, "QPH", "SEED")
-CD, QUALITY, BED_INFO, FASTA_INFO, REFERENCES, REGIONS, MUTATIONS = get_value(
-    conf, 'file', str, "CD", "QUALITY", 'BED_INFO', "FASTA_INFO", 'REFERENCES', 'REGIONS', 'MUTATIONS')
-COLUMN, MEMORY, = get_value(conf, 'file', int, "COLUMN", "MEMORY")
-SEGMENT_E = conf.getint("segment", "SEGMENT_E")
-SEGMENT_D = conf.getfloat("segment", "SEGMENT_D")
-SEG=conf.get("segment","SEG")
-REFERENCES = 'REFERENCES='+REFERENCES
-REGIONS = 'REGIONS='+REGIONS
-MUTATIONS = 'MUTATIONS='+MUTATIONS
-#if FLANK_LEN<SEGMENT_E-E_LEN:
-#    FLANK_LEN=SEGMENT_E
-JOIN_GAP=0
-exec(REFERENCES)
-exec(REGIONS)
-exec(MUTATIONS)
-BED_INFO=CD+BED_INFO
-FASTA_INFO=CD+FASTA_INFO
-FNA = get_dict(conf, "fna")
-BED = get_dict(conf, "bed")
-t = time.strftime('%Y%m%d_%H_%M_%S', time.localtime(time.time()))
-R1 = CD+"R1_%s.fastq" % (t)
-R2 = CD+"R2_%s.fastq" % (t)
-R0 = CD+"R_%s.fastq" % (t)
-conf = None
+

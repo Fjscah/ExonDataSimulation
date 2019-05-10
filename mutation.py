@@ -3,13 +3,18 @@ from functools import reduce
 from basic import *
 from sequence import *
 import sys
+import os
 COMPLEMENT = {'A': 'T', 'G': 'C', 'C': 'G', 'T': 'A'}
 
 
 def read_complement(read):
     l = []
     for char in read:
-        l.append(COMPLEMENT[char.upper()])
+        try:
+            l.append(COMPLEMENT[char.upper()])
+        except:
+            print('error char',char)
+            l.append(char)
     return ''.join(l)
 
 
@@ -511,7 +516,7 @@ def ini_muta(inireferences, iniregions, mut, inifile, polynum, COLUMN, MEMORY, B
     #!!!!!
     # output its(one polyoid) targed region on mutation reference
     for n, reg in enumerate(iniregions):
-        regmutation = reg+'.reg'+str(polyploid.id)
+        regmutation = os.path.splitext(reg)[0]+str(polyploid.id)+'.bed'
         polyploid.haploids[n].write_muta_bed(
             reg, regmutation, BED_INFO, effect_len, chip_len)
     with open(inifile, 'w', newline='\n') as writed:

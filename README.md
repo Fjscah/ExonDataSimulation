@@ -38,7 +38,7 @@ it's a simulation for wes , aimed at assessing tumor heterogeneity analysis soft
 
 ### 环境准备
 
-python 3.7(3.5可能支持)
+python 3.7(3.5可能支持), matplotlib
 
 ### 文件说明
 
@@ -76,24 +76,28 @@ simu.py是主操作工程文件,profile.ini是配置文件,在其中设置主要
 | 命令行 |                           功能                            |
 | :----: | :-------------------------------------------------------: |
 |  ref   |                     格式化参考基因组                      |
+|  dep   |                     从depth文件中获得捕获区域             |
 |  reg   |                      格式化捕获区域                       |
 |  qph   |                      格式化参考fastq                      |
 |  mut   |                    格式化突变设置文件                     |
 |  read  |                     输出fastq下机文件                     |
 |  seq   | 依照格式化的参考基因组和捕获<br>区域,获得可捕获区域的序列 |
-|  view  |               参考基因组浏览器(需要格式化)                |
+|  view  |      参考基因组浏览(需要格式化)和显示深度与外显子区间        |
 
 </center>
 
-ref,reg,qph,mut,read是4个主要部分,依次执行即可.seq可以查看正常基因组的外显子格式化后的序列(加上了侧翼序列的),view是查看染色体某个区间的序列,来帮助设计突变文件的
+ref,reg,qph,mut,read是4个主要部分,依次执行即可.seq可以查看正常基因组的外显子格式化后的序列(加上了侧翼序列的),view是辅助设计突变文件或查看深度与区间的匹配情况的,dep是在没有现成区域文件时,用测序深度文件获得区间的.
 
 ```python
 python simu.py -ref
+[python simu.py -dep depthfile avg_depth] 
 python simu.py -reg
 python simu.py -qph
+[python mutation.py VCFfile] # VCF转换格式
 python simu.py -mut
-python simu.py -read
+python simu.py -read [-R label]
 ```
+注:[]是可选的
 
 ## 突变格式
 
